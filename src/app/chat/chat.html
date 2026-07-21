@@ -1,0 +1,27 @@
+<div class="panel">
+  <div class="head">
+    @if (room.currentRoom(); as r) {
+      <span class="badge">{{ r.code }}</span>
+    }
+    <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
+    <button class="leave" (click)="leave()">Leave</button>
+  </div>
+  <div #log class="log">
+    @for (m of room.messages(); track m.id) {
+      @if (m.kind === 'action') {
+        <div class="msg action">{{ m.name }}: {{ m.text }}</div>
+      } @else {
+        <div class="msg chat" [class.me]="m.from === room.userId()">
+          <span class="who">{{ m.name }}</span
+          >{{ m.text }}
+        </div>
+      }
+    } @empty {
+      <p class="hint">No messages yet. Say hi 👋</p>
+    }
+  </div>
+  <form class="compose" (submit)="send($event)">
+    <input [(ngModel)]="draft" name="draft" placeholder="Message…" autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+</div>

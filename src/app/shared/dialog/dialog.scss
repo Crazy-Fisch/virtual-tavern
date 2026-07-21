@@ -1,0 +1,61 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 100;
+}
+
+.dialog {
+  width: min(90vw, 360px);
+
+  // fit mode (host class set by the `fit` input): wrap the projected content —
+  // used by the card view dialog so the frame hugs the card image.
+  :host(.fit) & {
+    width: fit-content;
+    max-width: 92vw;
+  }
+  border-radius: 0.75rem;
+  background: #1b1b24;
+  color: #eee;
+  border: 1px solid #2e2e3a;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  font:
+    14px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #2e2e3a;
+
+  h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+}
+
+.x {
+  border: 0;
+  background: transparent;
+  color: #999;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+
+  &:hover {
+    color: #fff;
+  }
+}
+
+.body {
+  padding: 1rem;
+}

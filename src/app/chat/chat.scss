@@ -1,0 +1,102 @@
+.panel {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  width: 280px;
+  max-height: calc(100% - 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(20, 20, 28, 0.82);
+  color: #eee;
+  font:
+    14px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+  backdrop-filter: blur(6px);
+}
+
+input {
+  padding: 0.5rem;
+  border: 1px solid #444;
+  border-radius: 0.4rem;
+  background: #1b1b24;
+  color: #fff;
+}
+
+button {
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: #6c4cff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.badge {
+  background: #6c4cff;
+  padding: 0.15rem 0.5rem;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+}
+
+.leave {
+  background: #333;
+  padding: 0.25rem 0.6rem;
+}
+
+.log {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 80px;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+// User-typed messages are colored; action-history lines are plain white.
+.msg.chat {
+  color: #cfc6f5;
+}
+
+.msg .who {
+  font-weight: 600;
+  margin-right: 0.4rem;
+  color: #b9a9ff;
+}
+
+.msg.me {
+  color: #c4ecd4;
+}
+
+.msg.me .who {
+  color: #7fd6a0;
+}
+
+.msg.action {
+  color: #fff;
+}
+
+.compose {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.compose input {
+  flex: 1;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #999;
+}

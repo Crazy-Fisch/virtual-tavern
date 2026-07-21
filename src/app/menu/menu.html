@@ -1,0 +1,121 @@
+<div class="menu">
+  <div class="card">
+    <h1 class="title">Virtual Tavern</h1>
+    <p class="tagline">Gather, talk, and play — together online.</p>
+
+    @if (supabase.session()) {
+      <p class="who">
+        Signed in as <strong>{{ supabase.displayName() || 'Guest' }}</strong>
+        @if (supabase.isGuest()) {
+          <span class="guest-tag">(guest)</span>
+        }
+      </p>
+    }
+
+    <nav class="actions">
+      @if (supabase.session()) {
+        <button class="primary" (click)="openPlay()">Play</button>
+      } @else {
+        <button class="primary" (click)="openAuth()">Sign in</button>
+      }
+      <!-- Decks persist per account, so the screen only exists for signed-in non-guests. -->
+      @if (supabase.session() && !supabase.isGuest()) {
+        <a class="btn" routerLink="/decks">Decks</a>
+      }
+      <button class="btn" (click)="openSettings()">Settings</button>
+      @if (supabase.session()) {
+        <button class="btn" (click)="signOut()">Sign out</button>
+      }
+    </nav>
+  </div>
+</div>
+
+@if (dialog() === 'auth') {
+  <app-dialog heading="Sign in" (close)="closeDialog()">
+    <form class="form" (submit)="$event.preventDefault(); signIn()">
+      <label>
+        Email
+        <input [(ngModel)]="email" name="email" type="email" autocomplete="email" />
+      </label>
+      <label>
+        Password
+        <input [(ngModel)]="password" name="password" type="password" autocomplete="current-password" />
+      </label>
+      @if (error(); as err) {
+        <p class="error">{{ err }}</p>
+      }
+      <button class="primary" type="submit" [disabled]="busy() || !email().trim() || !password()">
+        Sign in
+      </button>
+      <button
+        class="btn"
+        type="button"
+        [disabled]="busy() || !email().trim() || !password()"
+        (click)="signUp()"
+      >
+        Create account
+      </button>
+      <div class="divider">or</div>
+      <button class="btn" type="button" [disabled]="busy()" (click)="continueAsGuest()">
+        Continue as guest
+      </button>
+    </form>
+  </app-dialog>
+}
+
+@if (dialog() === 'play') {
+  <app-dialog heading="Play" (close)="closeDialog()">
+    <form class="form" (submit)="$event.preventDefault(); joinRoom()">
+      <label>
+        Display name
+        <input [(ngModel)]="name" name="name" placeholder="guest" maxlength="16" />
+      </label>
+      <label>
+        Room code
+        <input
+          class="code"
+          [(ngModel)]="joinCode"
+          name="joinCode"
+          placeholder="e.g. ABC123"
+          maxlength="6"
+          autocomplete="off"
+        />
+      </label>
+      <button class="primary" type="submit" [disabled]="busy() || !joinCode().trim()">
+        Join room
+      </button>
+      <div class="divider">or</div>
+      <label>
+        New room name <span class="optional">(optional)</span>
+        <input [(ngModel)]="roomName" name="roomName" placeholder="e.g. The Cellar" maxlength="40" />
+      </label>
+      <button class="btn" type="button" [disabled]="busy()" (click)="createRoom()">
+        Create new room
+      </button>
+      @if (error(); as err) {
+        <p class="error">{{ err }}</p>
+      }
+      <p class="hint">Share the room code with friends to meet in the same world.</p>
+    </form>
+  </app-dialog>
+}
+
+@if (dialog() === 'settings') {
+  <app-dialog heading="Settings" (close)="closeDialog()">
+    <form class="form" (submit)="$event.preventDefault(); closeDialog()">
+      <label>
+        Master volume <span class="val">{{ volume() }}%</span>
+        <input type="range" min="0" max="100" [(ngModel)]="volume" name="volume" />
+      </label>
+      <label>
+        Mouse sensitivity <span class="val">{{ sensitivity() }}%</span>
+        <input type="range" min="0" max="100" [(ngModel)]="sensitivity" name="sensitivity" />
+      </label>
+      <label class="check">
+        <input type="checkbox" [(ngModel)]="showNameTags" name="showNameTags" />
+        Show name tags
+      </label>
+      <button class="primary" type="submit">Done</button>
+    </form>
+  </app-dialog>
+}

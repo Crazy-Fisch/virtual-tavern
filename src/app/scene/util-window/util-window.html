@@ -1,0 +1,45 @@
+@if (interactions.utilWindow(); as w) {
+  <div class="util-window" [style.left]="left(w)" [style.top]="top(w)">
+    <header>
+      <span>Add to game</span>
+      <button type="button" class="x" aria-label="Close" (click)="close()">×</button>
+    </header>
+
+    <input
+      #search
+      type="search"
+      placeholder="Search cards…"
+      autocomplete="off"
+      [value]="query()"
+      (input)="onInput($event)"
+      (keydown.escape)="close()"
+    />
+
+    <div class="results">
+      @if (error(); as e) {
+        <p class="status">{{ e }}</p>
+      } @else if (searching()) {
+        <p class="status">Searching…</p>
+      } @else {
+        @for (hit of results(); track hit.src) {
+          <figure class="hit">
+            <img [src]="hit.src" [alt]="hit.name" [title]="hit.name" />
+            <div class="actions">
+              <button type="button" title="Add to the table" (click)="addToTable(hit)">
+                Table
+              </button>
+              <button type="button" title="Add to your hand" (click)="addToHand(hit)">Hand</button>
+              <button type="button" title="Put on top of your deck" (click)="addToDeck(hit)">
+                Deck
+              </button>
+            </div>
+          </figure>
+        } @empty {
+          <p class="status">
+            {{ query().trim().length >= 2 ? 'No cards found.' : 'Type a card name to search.' }}
+          </p>
+        }
+      }
+    </div>
+  </div>
+}

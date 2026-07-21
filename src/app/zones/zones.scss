@@ -1,0 +1,319 @@
+// Spans the scene like CardOverlay, but must never block pointer events meant
+// for the canvas — only the zone widgets themselves are hit-testable.
+:host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  font:
+    14px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+  color: #eee;
+}
+
+.others,
+.hand-card,
+.piles button,
+.zone-menu,
+.choose-deck,
+app-dialog {
+  pointer-events: auto;
+}
+
+// ---------- pre-game "choose deck" gate ----------
+.choose-deck {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.7rem 1.3rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: #6c4cff;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  &:hover {
+    background: #7d61ff;
+  }
+}
+
+.deck-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  max-width: min(70vw, 480px);
+  max-height: 50vh;
+  overflow-y: auto;
+
+  .empty {
+    margin: 0;
+    color: #999;
+  }
+}
+
+.deck-tile {
+  width: 108px;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid #2e2e3a;
+  border-radius: 0.6rem;
+  background: linear-gradient(160deg, #232333, #1a1a26);
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #6c4cff;
+  }
+
+  .deck-name {
+    font-weight: 600;
+    text-align: center;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .deck-count {
+    font-size: 0.8rem;
+    color: #b9a9ff;
+  }
+}
+
+.db-note {
+  margin: 0.6rem 0 0;
+  color: #d9b96a;
+  font-size: 0.8rem;
+}
+
+// ---------- other players ----------
+.others {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(20, 20, 28, 0.82);
+  backdrop-filter: blur(6px);
+
+  .name {
+    font-weight: 600;
+    color: #b9a9ff;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stat {
+    font-size: 0.85rem;
+    color: #ccc;
+  }
+
+  button.stat {
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+}
+
+// ---------- my hand ----------
+.hand {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+}
+
+.hand-card {
+  width: 96px;
+  margin: 0 -14px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: grab;
+  touch-action: none; // the press starts a play drag, never a scroll
+  user-select: none;
+  transform-origin: 50% 220%; // pivot far below the hand -> cards fan in an arc
+
+  img {
+    display: block;
+    width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    transition:
+      transform 0.12s ease-out,
+      box-shadow 0.12s ease-out;
+  }
+
+  &:hover {
+    z-index: 1;
+    position: relative;
+
+    img {
+      transform: translateY(-56px) scale(1.6);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+    }
+  }
+}
+
+// ---------- my piles ----------
+.piles {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.pile {
+  position: relative;
+  width: 64px;
+  height: 88px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  color: #eee;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+
+  .count {
+    font-size: 1.3rem;
+    font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  }
+
+  .label {
+    font-size: 0.7rem;
+    color: #bbb;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  }
+}
+
+// Card-back look for the (closed) deck.
+.pile.deck {
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 6px, transparent 6px 12px),
+    linear-gradient(160deg, #3d2f6e, #241c44);
+}
+
+.pile.grave {
+  background: #1b1b24;
+
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.55;
+  }
+
+  .count,
+  .label {
+    position: relative;
+  }
+}
+
+// ---------- pile context menu ----------
+.zone-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(24, 24, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  transform: translateY(-100%); // open upward; the piles sit at the bottom edge
+
+  button {
+    padding: 7px 10px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #eee;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+}
+
+// ---------- graveyard examine dialog (projected into app-dialog, so styled here) ----------
+.examine-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  max-width: min(70vw, 560px);
+  max-height: 60vh;
+  overflow-y: auto;
+
+  .empty {
+    margin: 0;
+    color: #999;
+  }
+}
+
+.examine-card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  img {
+    width: 110px;
+    border-radius: 6px;
+  }
+
+  button {
+    padding: 0.25rem 0.4rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: #6c4cff;
+    color: #fff;
+    font-size: 0.75rem;
+    cursor: pointer;
+
+    &:hover {
+      background: #7d61ff;
+    }
+  }
+}

@@ -1,0 +1,9 @@
+/* You can add global styles to this file, and also import other style files */
+
+/* app-root fills exactly 100dvh; any body margin would overflow it and show a scrollbar. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}

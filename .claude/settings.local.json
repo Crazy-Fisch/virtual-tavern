@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(ng version *)",
+      "Bash(npx -y @angular/cli@latest new virtual-tavern --directory . --style scss --ssr false --routing true --skip-git --defaults)",
+      "Bash(nvm version *)",
+      "Bash(fnm --version)",
+      "Bash(volta --version)"
+    ]
+  }
+}

@@ -1,0 +1,186 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.page {
+  position: relative;
+  height: 100%;
+  overflow-y: auto;
+  background: #12121a;
+  color: #eee;
+  font:
+    14px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #2e2e3a;
+
+  h1 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+}
+
+.back {
+  color: #b9a9ff;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.db-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.content {
+  display: flex;
+  gap: 2rem;
+  padding: 1.5rem 1.25rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+  }
+}
+
+.import {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(340px, 100%);
+
+  input,
+  textarea {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #2e2e3a;
+    border-radius: 0.5rem;
+    background: #1b1b24;
+    color: #eee;
+    font: inherit;
+    resize: vertical;
+
+    &:focus {
+      outline: none;
+      border-color: #6c4cff;
+    }
+  }
+
+  .primary {
+    padding: 0.5rem 0.9rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: #6c4cff;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: #7d61ff;
+    }
+  }
+
+  .error {
+    margin: 0;
+    color: #ff8a8a;
+    font-size: 0.85rem;
+  }
+
+  .hint {
+    margin: 0;
+    color: #777;
+    font-size: 0.8rem;
+  }
+}
+
+.overview {
+  flex: 1;
+  min-width: 260px;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+
+  .empty {
+    margin: 0;
+    color: #999;
+  }
+}
+
+// The design doc's deck square: name inside, card count below it.
+.deck-tile {
+  width: 132px;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid #2e2e3a;
+  border-radius: 0.6rem;
+  background: linear-gradient(160deg, #232333, #1a1a26);
+  color: #eee;
+  font: inherit;
+  cursor: context-menu;
+
+  &:hover {
+    border-color: #6c4cff;
+  }
+
+  .deck-name {
+    font-weight: 600;
+    text-align: center;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .deck-count {
+    font-size: 0.85rem;
+    color: #b9a9ff;
+  }
+}
+
+.deck-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(24, 24, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  button {
+    padding: 7px 10px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #ff8a8a;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+}

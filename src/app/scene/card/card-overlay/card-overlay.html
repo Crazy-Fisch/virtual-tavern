@@ -1,0 +1,36 @@
+@if (cardMenu(); as m) {
+  <div class="context-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+    <button type="button" (click)="act(m.card.id, 'view')">View</button>
+    <button type="button" (click)="act(m.card.id, 'rotate')">Rotate</button>
+    <button type="button" (click)="act(m.card.id, 'flip')">
+      {{ m.card.faceUp ? 'Flip face down' : 'Flip face up' }}
+    </button>
+    <button type="button" (click)="act(m.card.id, 'related')">Related…</button>
+    <button type="button" (click)="act(m.card.id, 'toHand')">To hand</button>
+    <button type="button" (click)="act(m.card.id, 'toDeck')">To deck (top)</button>
+    <button type="button" (click)="act(m.card.id, 'toGrave')">To graveyard</button>
+    <button type="button" class="danger" (click)="act(m.card.id, 'delete')">Delete</button>
+  </div>
+}
+
+@if (related(); as r) {
+  <div class="related-panel" [style.left.px]="r.x" [style.top.px]="r.y">
+    <header>
+      <span>Related cards</span>
+      <button type="button" class="x" aria-label="Close" (click)="closeRelated()">×</button>
+    </header>
+    <div class="thumbs">
+      @for (card of r.cards; track card.id) {
+        <img [src]="card.src" [alt]="card.name" [title]="card.name" (click)="view(card.id)" />
+      } @empty {
+        <p class="empty">No related cards.</p>
+      }
+    </div>
+  </div>
+}
+
+@if (viewCard(); as card) {
+  <app-dialog [heading]="card.name" [fit]="true" (close)="closeView()">
+    <img class="view-img" [src]="card.src" [alt]="card.name" />
+  </app-dialog>
+}

@@ -1,0 +1,109 @@
+<!-- Other players' zone sizes; graveyards are open for examination. -->
+<div class="others">
+  @for (p of zones.others(); track p.uid) {
+    <div class="player">
+      <span class="name">{{ p.name }}</span>
+      <span class="stat" title="Cards in hand">✋ {{ p.hand.length }}</span>
+      <span class="stat" title="Cards in deck">🂠 {{ p.deck.length }}</span>
+      <button type="button" class="stat grave" title="Examine graveyard" (click)="examine(p.uid)">
+        ⚰ {{ p.graveyard.length }}
+      </button>
+    </div>
+  }
+</div>
+
+@if (!zones.hasMine()) {
+  <!-- Not in the game yet: the zone UI waits until a deck is chosen. -->
+  <button type="button" class="choose-deck" (click)="choosingDeck.set(true)">Choose Deck</button>
+} @else if (zones.mine(); as me) {
+  <!-- My hand, fanned like physically held cards. Drag a card onto the table to play it. -->
+  <div class="hand">
+    @for (c of me.hand; track c.id; let i = $index) {
+      <button
+        type="button"
+        class="hand-card"
+        [style.transform]="fan(i, me.hand.length)"
+        [title]="'Drag onto the table to play ' + c.name"
+        (pointerdown)="startDrag($event, c)"
+      >
+        <img [src]="c.src" [alt]="c.name" draggable="false" />
+      </button>
+    }
+  </div>
+
+  <!-- My piles. Right-click for zone actions. -->
+  <div class="piles">
+    <button
+      type="button"
+      class="pile deck"
+      title="Deck — right-click to draw or shuffle"
+      (contextmenu)="openMenu($event, 'deck')"
+    >
+      <span class="count">{{ me.deck.length }}</span>
+      <span class="label">Deck</span>
+    </button>
+    <button
+      type="button"
+      class="pile grave"
+      title="Graveyard — click to examine"
+      (click)="examine(me.uid)"
+      (contextmenu)="openMenu($event, 'graveyard')"
+    >
+      @if (me.graveyard.at(-1); as top) {
+        <img [src]="top.src" [alt]="top.name" />
+      }
+      <span class="count">{{ me.graveyard.length }}</span>
+      <span class="label">Grave</span>
+    </button>
+  </div>
+}
+
+@if (menu(); as m) {
+  <div class="zone-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+    @if (m.kind === 'deck') {
+      <button type="button" (click)="draw()">Draw</button>
+      <button type="button" (click)="shuffle()">Shuffle</button>
+    } @else {
+      <button type="button" (click)="examine(zones.mine().uid)">Examine</button>
+    }
+  </div>
+}
+
+@if (choosingDeck()) {
+  <app-dialog heading="Choose a deck" (close)="choosingDeck.set(false)">
+    <div class="deck-choices">
+      @for (d of decks.decks(); track d.id) {
+        <button type="button" class="deck-tile" (click)="chooseDeck(d)">
+          <span class="deck-name">{{ d.name }}</span>
+          <span class="deck-count">{{ deckSize(d) }} cards</span>
+        </button>
+      } @empty {
+        @if (decks.available()) {
+          <p class="empty">No decks yet — import one on the menu’s Decks screen.</p>
+        } @else {
+          <p class="empty">Decks need an account — guests cannot import decks.</p>
+        }
+      }
+    </div>
+    @if (!db.ready()) {
+      <p class="db-note">The card database isn’t ready yet — cards may come in without images.</p>
+    }
+  </app-dialog>
+}
+
+@if (examining(); as p) {
+  <app-dialog [heading]="p.name + '’s graveyard'" (close)="examiningUid.set(null)">
+    <div class="examine-grid">
+      @for (c of p.graveyard; track c.id) {
+        <figure class="examine-card">
+          <img [src]="c.src" [alt]="c.name" [title]="c.name" />
+          @if (isMine()) {
+            <button type="button" (click)="toHand(c)">To hand</button>
+          }
+        </figure>
+      } @empty {
+        <p class="empty">Empty.</p>
+      }
+    </div>
+  </app-dialog>
+}

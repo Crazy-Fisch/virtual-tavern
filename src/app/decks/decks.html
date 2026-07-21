@@ -1,0 +1,57 @@
+<div class="page">
+  <header class="bar">
+    <a class="back" routerLink="/">← Menu</a>
+    <h1>Decks</h1>
+    <span class="db-status">{{ dbLabel() }}</span>
+  </header>
+
+  <div class="content">
+    <section class="import">
+      <h2>Import a decklist</h2>
+      <input
+        type="text"
+        placeholder="Deck name"
+        [value]="name()"
+        (input)="onNameInput($event)"
+      />
+      <textarea
+        rows="14"
+        placeholder="4 Lightning Bolt&#10;2x Counterspell&#10;1 Delver of Secrets (ISD) 51&#10;…"
+        [value]="list()"
+        (input)="onListInput($event)"
+      ></textarea>
+      <button type="button" class="primary" (click)="importDeck()">Import</button>
+      @if (error(); as e) {
+        <p class="error">{{ e }}</p>
+      }
+      <p class="hint">
+        Paste an export from Arena, Moxfield, Archidekt, MTGO, or a plain list of names.
+      </p>
+    </section>
+
+    <section class="overview">
+      <h2>Your decks</h2>
+      <div class="grid">
+        @for (d of store.decks(); track d.id) {
+          <button
+            type="button"
+            class="deck-tile"
+            [title]="d.name + ' — right-click to delete'"
+            (contextmenu)="openMenu($event, d)"
+          >
+            <span class="deck-name">{{ d.name }}</span>
+            <span class="deck-count">{{ deckSize(d) }}</span>
+          </button>
+        } @empty {
+          <p class="empty">No decks yet — import one on the left.</p>
+        }
+      </div>
+    </section>
+  </div>
+
+  @if (menu(); as m) {
+    <div class="deck-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+      <button type="button" (click)="deleteDeck()">Delete deck</button>
+    </div>
+  }
+</div>

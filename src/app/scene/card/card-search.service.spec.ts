@@ -1,0 +1,58 @@
+import { TestBed } from '@angular/core/testing';
+import { afterEach, vi } from 'vitest';
+import { CardSearchService } from './card-search.service';
+
+function scryfallResponse(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as Response;
+}
+
+describe('CardSearchService', () => {
+  let service: CardSearchService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(CardSearchService);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('maps hits to name + image, using the first face for double-faced cards', async () => {
+    fetchMock.mockResolvedValue(
+      scryfallResponse(200, {
+        data: [
+          { name: 'Water Worm', image_uris: { normal: 'https://img/worm.jpg' } },
+          { name: 'Delver', card_faces: [{ image_uris: { normal: 'https://img/delver.jpg' } }] },
+          { name: 'No Image' },
+        ],
+      }),
+    );
+    expect(await service.search('worm')).toEqual([
+      { name: 'Water Worm', src: 'https://img/worm.jpg' },
+      { name: 'Delver', src: 'https://img/delver.jpg' },
+    ]);
+    expect(fetchMock.mock.calls[0]![0]).toContain('q=worm');
+  });
+
+  it('caches per query and skips queries under 2 characters', async () => {
+    fetchMock.mockResolvedValue(scryfallResponse(200, { data: [] }));
+    await service.search('worm');
+    await service.search('  Worm '); // trimmed + case-insensitive cache key
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await service.search('w')).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats Scryfall 404 as no matches and throws on other failures', async () => {
+    fetchMock.mockResolvedValueOnce(scryfallResponse(404, {}));
+    expect(await service.search('nothing')).toEqual([]);
+    fetchMock.mockResolvedValueOnce(scryfallResponse(500, {}));
+    await expect(service.search('boom')).rejects.toThrow('Card search failed (500)');
+  });
+});

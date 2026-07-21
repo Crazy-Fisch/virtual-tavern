@@ -1,0 +1,110 @@
+// Spans the scene so popup coordinates match the canvas, but must never block
+// pointer events meant for the canvas — only the popups themselves are hit-testable.
+:host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font: 14px/1.4 'Inter', system-ui, sans-serif;
+}
+
+.context-menu,
+.related-panel,
+app-dialog {
+  pointer-events: auto;
+}
+
+.context-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(24, 24, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  button {
+    padding: 7px 10px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #eee;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &:disabled {
+      color: #666;
+      cursor: default;
+    }
+
+    &.danger {
+      color: #ff7a7a;
+    }
+  }
+}
+
+.related-panel {
+  position: absolute;
+  width: 230px;
+  border-radius: 8px;
+  background: rgba(24, 24, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: #eee;
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    .x {
+      border: none;
+      background: none;
+      color: #aaa;
+      font-size: 16px;
+      cursor: pointer;
+
+      &:hover {
+        color: #fff;
+      }
+    }
+  }
+
+  .thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+
+    img {
+      width: 64px;
+      border-radius: 4px;
+      cursor: pointer;
+
+      &:hover {
+        outline: 2px solid #fff;
+      }
+    }
+
+    .empty {
+      margin: 0;
+      color: #999;
+    }
+  }
+}
+
+.view-img {
+  display: block;
+  max-width: min(70vw, 480px);
+  max-height: 70vh;
+  border-radius: 12px;
+}

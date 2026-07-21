@@ -1,0 +1,16 @@
+<canvas #canvas class="scene-canvas"></canvas>
+<app-camera-rig />
+@for (card of cards(); track card.id) {
+  <app-card [state]="card" />
+}
+<app-zones />
+<app-card-overlay />
+<app-util-window />
+@if (assets.loading()) {
+  <div class="loading-overlay">
+    Loading tavern…
+    @if (assets.progress() > 0) {
+      {{ (assets.progress() * 100).toFixed(0) }}%
+    }
+  </div>
+}
