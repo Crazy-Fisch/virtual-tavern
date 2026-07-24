@@ -10,11 +10,11 @@ const HALF_PI = Math.PI / 2;
 /** Slight white tint (emissive) applied to every card material while hovered. */
 const HOVER_TINT = 0x333333;
 /**
- * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.3 brings a card
- * down to 0.19 × 0.27 m — proportionally like a real card on the (oversized,
- * 4 × 6 m) table while staying readable from the fixed overhead camera.
+ * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.4 brings a card
+ * down to 0.25 × 0.36 m — a little larger than true proportion, chosen for
+ * readability on the (oversized, 4 × 6 m) table under the fixed overhead camera.
  */
-const CARD_SCALE = 0.3;
+const CARD_SCALE = 0.4;
 
 /**
  * A single playing card in the 3D scene, rendering the CardState it receives
@@ -58,6 +58,14 @@ export class Card implements OnDestroy {
       const hovered = this.interactions.hoveredId() === this.state().id;
       this.applyHover(hovered);
     });
+    // While this card is the one being dragged, hide its 3D instance: a DOM
+    // "ghost" (rendered by the zone overlay) follows the cursor on top of
+    // everything instead, so the dragged card never disappears behind the hand
+    // or pile UI. Local-only — remote players never receive the drag preview.
+    effect(() => {
+      const dragging = this.interactions.draggingId() === this.state().id;
+      if (this.instance) this.instance.visible = !dragging;
+    });
   }
 
   ngOnDestroy(): void {
@@ -87,6 +95,9 @@ export class Card implements OnDestroy {
       wrapper.scale.setScalar(CARD_SCALE);
       this.instance = wrapper;
       const state = untracked(this.state);
+      // A card spawned already mid-drag (played from the hand) shows as the DOM
+      // ghost, not here, until the drop lands.
+      wrapper.visible = untracked(this.interactions.draggingId) !== state.id;
       this.applyPose(state.position, state.yaw, state.faceUp, state.tapped);
       this.graph.root.add(wrapper);
       this.interactions.register(state.id, wrapper);
@@ -144,6 +155,13 @@ export class Card implements OnDestroy {
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
       const owned = materials.map((m) => {
         const clone = m.clone() as MeshStandardMaterial;
+        // Z-fighting fix (option A): a small negative polygon offset biases the
+        // card faces apart in the depth buffer, so cards laid coplanar next to
+        // each other stop flickering — without moving any geometry, so stacking
+        // and the "drop onto another card" ray are unaffected.
+        clone.polygonOffset = true;
+        clone.polygonOffsetFactor = -1;
+        clone.polygonOffsetUnits = -1;
         this.ownedMaterials.push(clone);
         if (/front|artwork/i.test(m.name)) this.frontMaterial = clone;
         return clone;

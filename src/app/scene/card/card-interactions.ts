@@ -4,7 +4,7 @@ import { RoomService } from '../../room/room.service';
 import { ZoneStore } from '../../zones/zone-store';
 import { SceneCamera } from '../scene-camera';
 import { CardStore } from './card-store';
-import { CardAction } from './card.types';
+import { CardAction, CardState } from './card.types';
 
 /** Height a card floats at while being moved (tabletop is at y ≈ 0.2). */
 export const DRAG_Y = 0.5;
@@ -52,6 +52,28 @@ export interface HandDragHooks {
 }
 
 /**
+ * A DOM zone (hand/deck/graveyard UI) that can absorb a card dropped onto it,
+ * registered by the Zones overlay. A card released over a hit target is routed
+ * into that zone instead of being placed on the table.
+ */
+export interface CardDropTarget {
+  /** True if the screen point (client coords) is over this target's UI. */
+  hitTest(clientX: number, clientY: number): boolean;
+  /** Absorb the dropped card (still a table card at this point). */
+  accept(card: CardState): void;
+}
+
+/** The dragged card as drawn by a DOM overlay: a "ghost" following the cursor,
+ * on top of every overlay so it never hides behind the hand or pile UI. */
+export interface DragGhost {
+  src: string;
+  faceUp: boolean;
+  /** Cursor position in client coordinates. */
+  x: number;
+  y: number;
+}
+
+/**
  * Pointer/keyboard layer for the table (the design doc's "CardContext"):
  * raycasts the cursor against registered card objects for hover highlight and
  * picking, runs the drag-to-move flow (press and drag past a small threshold →
@@ -83,9 +105,13 @@ export class CardInteractions {
   private pressed: { id: string; x: number; y: number } | null = null;
   /** Set while the active drag came from the hand UI (missed drop → revert). */
   private handDrag: HandDragHooks | null = null;
+  /** DOM zones that can absorb a dropped card (registered by the Zones overlay). */
+  private readonly dropTargets = new Set<CardDropTarget>();
 
   readonly hoveredId = signal<string | null>(null);
   readonly draggingId = signal<string | null>(null);
+  /** The card currently being dragged, drawn as a cursor-following DOM ghost. */
+  readonly dragGhost = signal<DragGhost | null>(null);
   readonly contextMenu = signal<OverlayAnchor | null>(null);
   readonly viewCardId = signal<string | null>(null);
   readonly relatedPanel = signal<OverlayAnchor | null>(null);
@@ -122,7 +148,7 @@ export class CardInteractions {
     if (this.pressed?.id === id) this.pressed = null;
     if (this.hoveredId() === id) this.hoveredId.set(null);
     if (this.draggingId() === id) {
-      this.draggingId.set(null);
+      this.endDrag();
       this.handDrag = null;
     }
     if (this.contextMenu()?.id === id) this.contextMenu.set(null);
@@ -137,6 +163,26 @@ export class CardInteractions {
 
   removeSurface(object: Object3D): void {
     this.surfaces.delete(object);
+  }
+
+  /** Register a DOM zone that can absorb a card dropped onto it (Zones overlay). */
+  registerDropTarget(target: CardDropTarget): void {
+    this.dropTargets.add(target);
+  }
+
+  unregisterDropTarget(target: CardDropTarget): void {
+    this.dropTargets.delete(target);
+  }
+
+  /** End the active drag: clear the drag id and the DOM ghost together. */
+  private endDrag(): void {
+    this.draggingId.set(null);
+    this.dragGhost.set(null);
+  }
+
+  private dropTargetAt(x: number, y: number): CardDropTarget | null {
+    for (const target of this.dropTargets) if (target.hitTest(x, y)) return target;
+    return null;
   }
 
   /**
@@ -229,16 +275,26 @@ export class CardInteractions {
     if (draggingId) {
       const handDrag = this.handDrag;
       this.handDrag = null;
+      // A drop over a UI zone (hand/deck/graveyard) sends the card there,
+      // taking priority over placing it on the table below.
+      const card = this.store.card(draggingId);
+      const target = card ? this.dropTargetAt(event.clientX, event.clientY) : null;
+      if (target && card) {
+        this.store.clearPreview(draggingId);
+        this.endDrag();
+        target.accept(card);
+        return;
+      }
       if (this.tryPlace(draggingId, event)) {
         handDrag?.commit();
       } else if (handDrag) {
         // A hand card dropped off the table goes back into the hand.
-        this.draggingId.set(null);
+        this.endDrag();
         handDrag.revert();
       } else {
         // Snap back to where the card was picked up.
         this.store.clearPreview(draggingId);
-        this.draggingId.set(null);
+        this.endDrag();
       }
       return;
     }
@@ -281,7 +337,7 @@ export class CardInteractions {
         // card being played from the hand, back into the hand.
         const handDrag = this.handDrag;
         this.handDrag = null;
-        this.draggingId.set(null);
+        this.endDrag();
         if (handDrag) handDrag.revert();
         else this.store.clearPreview(draggingId);
       }
@@ -297,8 +353,16 @@ export class CardInteractions {
     this.act(hoveredId, action);
   };
 
-  /** Follow the cursor: intersect its ray with the horizontal plane at DRAG_Y. */
+  /** Follow the cursor: intersect its ray with the horizontal plane at DRAG_Y,
+   * and update the DOM ghost that renders the dragged card on top of the UI. */
   private dragTo(id: string, event: MouseEvent): void {
+    const card = this.store.card(id);
+    this.dragGhost.set({
+      src: card?.src ?? '',
+      faceUp: card?.faceUp ?? true,
+      x: event.clientX,
+      y: event.clientY,
+    });
     if (!this.setRayFromCursor(event)) return;
     if (this.raycaster.ray.intersectPlane(DRAG_PLANE, this.hit)) {
       this.store.preview(id, { position: [this.hit.x, DRAG_Y, this.hit.z] });
@@ -323,7 +387,7 @@ export class CardInteractions {
     this.store.update(id, {
       position: [hit.point.x, hit.point.y + PLACE_OFFSET, hit.point.z],
     });
-    this.draggingId.set(null);
+    this.endDrag();
     return true;
   }
 

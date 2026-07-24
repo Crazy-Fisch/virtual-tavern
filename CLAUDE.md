@@ -80,10 +80,10 @@ directly as a payload. Room/chat/world shapes live in `src/app/room/room.types.t
 camera lives in `SceneCamera` (`src/app/scene/scene-camera.ts`, provided by Scene like
 `SceneGraph`) and is driven by the `CameraRig` component
 (`src/app/scene/camera-rig/camera-rig.ts`): a fixed near-bird's-eye base pose (~20° off
-vertical, `CAMERA_POS`/`CAMERA_TARGET` in camera-rig.ts) looking down on the table from the
-player's table end — mirrored to the opposite (−Z) end for non-owners via
-`RoomService.isRoomOwner()`, fixed once on mount — plus a slight clamped pan toward the
-mouse near screen edges. There are no avatars or movement — the former door/avatar code was
+vertical, `CAMERA_POS`/`CAMERA_TARGET` in camera-rig.ts — pulled in to ~4.2 m for larger,
+clearer cards) looking down on the table from the player's table end — mirrored to the
+opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, fixed once on mount — plus
+a slight clamped pan toward the mouse near screen edges. There are no avatars or movement — the former door/avatar code was
 removed with the pivot to a card-table view. `P2pService`'s position stream is dormant
 (nothing calls `sendPosition()`; the service still provides `peerCount` for the chat badge
 and is the transport to reuse for future high-frequency sync like card drags). For networked
@@ -99,14 +99,19 @@ late joiner starts from the persisted snapshot. Mutations write back through
 `setWorldObject`/`removeWorldObject`; dragging stays a local `preview()` override until the
 drop commits (remote players see the placement, not the 60 Hz cursor path — the P2P layer is
 still the transport to reuse if live drag streaming is ever wanted). Cards render small
-(`CARD_SCALE` in `card.ts` scales the 10×-authored model down to ~real proportions on the
-oversized table). `CardInteractions`
+(`CARD_SCALE` in `card.ts` scales the 10×-authored model down onto the oversized table; each
+cloned material also gets a small negative `polygonOffset` so coplanar cards don't z-fight).
+While a card is being dragged its 3D instance is hidden and a DOM "ghost" (`dragGhost` signal,
+rendered by the Zones overlay) follows the cursor on top of all UI, so the dragged card never
+disappears behind the hand/pile widgets. `CardInteractions`
 (`src/app/scene/card/card-interactions.ts`, provided by Scene, attached to the canvas)
 raycasts hover/picking for cards, runs the drag-to-move flow (press and drag past
 a small threshold → float at `DRAG_Y` → release commits onto whatever the camera-through-cursor
-ray hits: table/floor/another card, so cards stack; a drop that hits nothing snaps the card
-back; Escape cancels; a plain click taps/untaps a card — a networked quarter turn via the
-`tapped` field on CardState), posts action-history lines, and owns the popup state rendered by
+ray hits: table/floor/another card, so cards stack; a drop over a registered **`CardDropTarget`**
+— the hand/deck/graveyard UI, registered by Zones — routes the card into that zone instead; a
+drop that hits nothing snaps the card back; Escape cancels; a plain click taps/untaps a card —
+a networked quarter turn via the `tapped` field on CardState), posts action-history lines, and
+owns the popup state rendered by
 `CardOverlay` (context menus for cards — view/rotate/flip/related/to-hand/to-deck/
 to-graveyard/delete) plus the **util window**
 (`src/app/scene/util-window/`), opened by right-clicking empty table: debounced card search
@@ -129,22 +134,30 @@ Scene-provided stores) is the DOM overlay: my hand fanned bottom-center (drag a 
 table to play it — `startDrag` arms a press on pointerdown; past a small threshold it hands
 off to `CardInteractions.beginDragFromHand`, spawning the card face-up at `seatYaw()` and
 following the cursor; releasing over the table commits, releasing off-table returns it to the
-hand), my deck/graveyard piles with right-click menus (draw/shuffle/examine), other players'
-zone counts top-right with examinable graveyards. Zones are **not** created on entry: until a player joins the game the
+hand; a hand too wide to fit is pannable by wheeling over it — `onHandWheel` shifts `handScroll`).
+My deck pile draws on **left-click** and opens a right-click menu (shuffle only); the graveyard
+opens on click. A card dragged onto a zone widget is absorbed by that zone: Zones registers a
+`CardDropTarget` per kind (hit-tested with `elementFromPoint`) that calls `takeFromTable`.
+Other players' zone counts sit top-right with examinable graveyards. Zones are **not** created on entry: until a player joins the game the
 zone UI is hidden behind a bottom-right "Choose Deck" button (`hasMine()` is the gate) whose
 picker lists `DeckStore` decks; choosing one resolves every decklist entry against the card
 database, calls `loadDeck()` (zones created with the shuffled deck), and prefetches the card
 images. `refreshOwnerName()` only renames zones that already exist (rejoin).
 
-Decks and the card database (`src/app/decks/`, `src/app/carddb/`): `DeckStore` (root) persists
-imported decks per account in the Supabase `decks` table (owner-only RLS; `Deck` = id + name +
-`{card, count}` list; phase 1 import-only via `parseDecklist`, a multi-format text parser —
-Arena/Moxfield/Archidekt/MTGO/plain). Decks are an **account feature**: `available()` is false
-for guests and signed-out users (no decks, imports blocked, and the Decks screen hidden on the
-menu + guarded by `decksGuard`). A session-following `effect` loads the account's decks on
-sign-in and clears them on sign-out; imports/removes are optimistic with rollback. Decks
-imported before this (the old per-browser localStorage) are uploaded once on the first
-signed-in load (`migrateLegacy`).
+Decks and the card database (`src/app/decks/`, `src/app/carddb/`): `DeckStore` (root) stores
+decks either **locally** (guests — browser localStorage, key `virtual-tavern.decks`, per-device
+and lost if cleared, which is acceptable) or **on the account** (signed-in non-guests — the
+Supabase `decks` table, owner-only RLS). `available()` is true for anyone signed in (guest or
+account) and false only when fully signed out; `decksGuard` and the menu's Decks link mirror
+that. A session-following `effect` picks the store: a guest reads local decks, an account loads
+its cloud decks and **`syncLocalToAccount`** uploads any local guest decks into the account
+once (so a guest who registers keeps what they built), then clears local. `Deck` = id + name +
+`{card, count}` list; phase 1 import-only via `parseDecklist` (Arena/Moxfield/Archidekt/MTGO/
+plain); import/rename/remove are optimistic with rollback. The Decks screen (`decks.ts`) shows
+each deck as a square backed by a cutout of its first card's art (right-click → rename/delete),
+and left-clicking a deck opens a full-page **deck view** — a scrollable grid of every card,
+images resolved via the card database (white placeholder while loading, pink for an unknown
+name); "← Back" returns to the overview.
 `CardDatabaseService` (root) is the local card database: `init()` (fired, not awaited, from an
 app initializer) loads a compact name→image index from the IndexedDB cache (`CardDbCache`) or,
 on first run, streams the Scryfall bulk-data download through `JsonArrayChunkParser`
@@ -180,22 +193,25 @@ future instanced scene objects.
 `App` is just a `<router-outlet>`. Routes (`app.routes.ts`):
 
 - `''` → `Menu` (`src/app/menu/`): landing screen. Signed out, the primary button opens the
-  Auth dialog (email/password sign-in, sign-up, continue-as-guest). Signed in, it opens the
-  Play dialog (display name + join-by-code or create-room); success navigates to `/tavern`.
-  Also Decks (`routerLink="/decks"`, shown only for signed-in non-guests — decks are an
-  account feature), Settings (sample, not-yet-persisted), and Sign out.
-- `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — guests and signed-out
-  visitors are redirected to `/`): deck screen — import a pasted decklist (name +
-  textarea), overview grid of deck squares (name + card count, right-click to delete), card
-  database status line.
+  Auth dialog (email/password sign-in, sign-up with a chosen **username** stored as
+  `display_name` so an account is never shown as "Guest", continue-as-guest). Signing in lands
+  back on the menu (not straight into Play). Signed in, the primary button opens the Play
+  dialog: join-by-code or create-room (room name **required, ≥3 chars**). Only guests type a
+  per-room display name; registered players always play under their username. Also Decks
+  (`routerLink="/decks"`, shown for anyone signed in — guests included), Settings (sample,
+  not-yet-persisted), and Sign out.
+- `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — only fully signed-out
+  visitors are redirected to `/`): deck screen — import a pasted decklist, deck-square overview
+  (left-click to open the full-page deck view, right-click to rename/delete), card database
+  status line.
 - `'tavern'` → `Tavern` (`src/app/tavern/`): hosts `Scene` + `Chat`. Guarded by `tavernGuard`
   (`tavern-guard.ts`, an async `CanActivateFn`): if no room is joined it first tries
   `RoomService.resume()` — the current room is persisted in localStorage on entry and cleared
   only by an explicit `leave()`, so a page reload rejoins the same room (re-validated through
   the join-by-code RPC) — and redirects to `/` only if that fails.
 
-`Chat` (`src/app/chat/`) is the in-room overlay and the game history: shows the room share
-code + peer count, renders `room.messages()` (own messages matched by auth uid; `'action'`
+`Chat` (`src/app/chat/`) is the in-room overlay and the game history: shows the room name and
+share code + peer count, renders `room.messages()` (own messages matched by auth uid; `'action'`
 kind lines plain white, typed messages colored, log pinned to the newest message), and its
 Leave button calls `room.leave()` and routes back to `/`. Popups use the reusable `Dialog`
 (`src/app/shared/dialog/`), a modal that projects content via `<ng-content>` and emits `close`

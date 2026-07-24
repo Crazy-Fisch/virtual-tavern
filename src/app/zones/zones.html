@@ -16,8 +16,9 @@
   <!-- Not in the game yet: the zone UI waits until a deck is chosen. -->
   <button type="button" class="choose-deck" (click)="choosingDeck.set(true)">Choose Deck</button>
 } @else if (zones.mine(); as me) {
-  <!-- My hand, fanned like physically held cards. Drag a card onto the table to play it. -->
-  <div class="hand">
+  <!-- My hand, fanned like physically held cards. Drag a card onto the table to
+       play it; wheel over the hand to pan a hand too wide to fit. -->
+  <div class="hand" #hand [style.transform]="handTransform()" (wheel)="onHandWheel($event)">
     @for (c of me.hand; track c.id; let i = $index) {
       <button
         type="button"
@@ -36,7 +37,8 @@
     <button
       type="button"
       class="pile deck"
-      title="Deck — right-click to draw or shuffle"
+      title="Deck — click to draw, right-click to shuffle"
+      (click)="draw()"
       (contextmenu)="openMenu($event, 'deck')"
     >
       <span class="count">{{ me.deck.length }}</span>
@@ -61,7 +63,6 @@
 @if (menu(); as m) {
   <div class="zone-menu" [style.left.px]="m.x" [style.top.px]="m.y">
     @if (m.kind === 'deck') {
-      <button type="button" (click)="draw()">Draw</button>
       <button type="button" (click)="shuffle()">Shuffle</button>
     } @else {
       <button type="button" (click)="examine(zones.mine().uid)">Examine</button>
@@ -78,17 +79,23 @@
           <span class="deck-count">{{ deckSize(d) }} cards</span>
         </button>
       } @empty {
-        @if (decks.available()) {
-          <p class="empty">No decks yet — import one on the menu’s Decks screen.</p>
-        } @else {
-          <p class="empty">Decks need an account — guests cannot import decks.</p>
-        }
+        <p class="empty">No decks yet — import one on the menu’s Decks screen.</p>
       }
     </div>
     @if (!db.ready()) {
       <p class="db-note">The card database isn’t ready yet — cards may come in without images.</p>
     }
   </app-dialog>
+}
+
+<!-- The dragged card, drawn on top of every overlay so it never hides behind the
+     hand or piles. The 3D card is hidden while this ghost is showing. -->
+@if (interactions.dragGhost(); as g) {
+  <div class="drag-ghost" [style.left.px]="g.x" [style.top.px]="g.y">
+    @if (g.faceUp && g.src) {
+      <img [src]="g.src" alt="" draggable="false" />
+    }
+  </div>
 }
 
 @if (examining(); as p) {

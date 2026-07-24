@@ -23,6 +23,8 @@ export class Menu {
   // Auth form
   protected readonly email = signal('');
   protected readonly password = signal('');
+  /** Username chosen when creating an account (used everywhere; guests type a name per room instead). */
+  protected readonly username = signal('');
 
   // Play form
   protected readonly name = signal('');
@@ -61,7 +63,9 @@ export class Menu {
   }
 
   protected signUp(): Promise<void> {
-    return this.runAuth(() => this.supabase.signUp(this.email().trim(), this.password()));
+    return this.runAuth(() =>
+      this.supabase.signUp(this.email().trim(), this.password(), this.username()),
+    );
   }
 
   protected continueAsGuest(): Promise<void> {
@@ -73,11 +77,16 @@ export class Menu {
   }
 
   protected joinRoom(): Promise<void> {
-    return this.runPlay(() => this.room.joinByCode(this.joinCode(), this.name()));
+    return this.runPlay(() => this.room.joinByCode(this.joinCode(), this.playName()));
   }
 
   protected createRoom(): Promise<void> {
-    return this.runPlay(() => this.room.createRoom(this.roomName(), this.name()));
+    return this.runPlay(() => this.room.createRoom(this.roomName(), this.playName()));
+  }
+
+  /** Registered players always play under their username; only guests type a per-room name. */
+  private playName(): string {
+    return this.supabase.isGuest() ? this.name() : this.supabase.displayName();
   }
 
   private async runAuth(fn: () => Promise<string | null>): Promise<void> {
@@ -90,7 +99,9 @@ export class Menu {
       return;
     }
     this.password.set('');
-    this.openPlay();
+    // Land on the menu (not straight into the Play dialog) so the player can
+    // pick Play, Decks, or Settings after signing in.
+    this.dialog.set(null);
   }
 
   private async runPlay(fn: () => Promise<string | null>): Promise<void> {

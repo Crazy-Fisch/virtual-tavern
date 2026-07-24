@@ -1,57 +1,103 @@
 <div class="page">
   <header class="bar">
-    <a class="back" routerLink="/">← Menu</a>
-    <h1>Decks</h1>
+    @if (viewing()) {
+      <button type="button" class="back" (click)="closeView()">← Back</button>
+    } @else {
+      <a class="back" routerLink="/">← Menu</a>
+    }
+    <h1>{{ viewing()?.name || 'Decks' }}</h1>
     <span class="db-status">{{ dbLabel() }}</span>
   </header>
 
-  <div class="content">
-    <section class="import">
-      <h2>Import a decklist</h2>
-      <input
-        type="text"
-        placeholder="Deck name"
-        [value]="name()"
-        (input)="onNameInput($event)"
-      />
-      <textarea
-        rows="14"
-        placeholder="4 Lightning Bolt&#10;2x Counterspell&#10;1 Delver of Secrets (ISD) 51&#10;…"
-        [value]="list()"
-        (input)="onListInput($event)"
-      ></textarea>
-      <button type="button" class="primary" (click)="importDeck()">Import</button>
-      @if (error(); as e) {
-        <p class="error">{{ e }}</p>
+  @if (viewing(); as deck) {
+    <!-- Full-page deck view: every card in the list, images from the card database. -->
+    <div class="deck-view">
+      @if (!db.ready()) {
+        <p class="view-note">
+          The card database isn’t ready yet — some cards may show as placeholders.
+        </p>
       }
-      <p class="hint">
-        Paste an export from Arena, Moxfield, Archidekt, MTGO, or a plain list of names.
-      </p>
-    </section>
-
-    <section class="overview">
-      <h2>Your decks</h2>
-      <div class="grid">
-        @for (d of store.decks(); track d.id) {
-          <button
-            type="button"
-            class="deck-tile"
-            [title]="d.name + ' — right-click to delete'"
-            (contextmenu)="openMenu($event, d)"
-          >
-            <span class="deck-name">{{ d.name }}</span>
-            <span class="deck-count">{{ deckSize(d) }}</span>
-          </button>
+      <div class="card-grid">
+        @for (entry of deck.list; track $index) {
+          @let rec = resolve(entry.card);
+          <figure class="db-card" [class.missing]="!rec" [class.noimg]="rec && !rec.src">
+            @if (rec && rec.src) {
+              <img [src]="rec.src" [alt]="rec.name" [title]="rec.name" loading="lazy" />
+            }
+            <figcaption>
+              <span class="cname">{{ entry.card }}</span>
+              <span class="ccount">×{{ entry.count }}</span>
+            </figcaption>
+          </figure>
         } @empty {
-          <p class="empty">No decks yet — import one on the left.</p>
+          <p class="empty">This deck has no cards.</p>
         }
       </div>
-    </section>
-  </div>
+    </div>
+  } @else {
+    <div class="content">
+      <section class="import">
+        <h2>Import a decklist</h2>
+        <input type="text" placeholder="Deck name" [value]="name()" (input)="onNameInput($event)" />
+        <textarea
+          rows="14"
+          placeholder="4 Lightning Bolt&#10;2x Counterspell&#10;1 Delver of Secrets (ISD) 51&#10;…"
+          [value]="list()"
+          (input)="onListInput($event)"
+        ></textarea>
+        <button type="button" class="primary" (click)="importDeck()">Import</button>
+        @if (error(); as e) {
+          <p class="error">{{ e }}</p>
+        }
+        <p class="hint">
+          Paste an export from Arena, Moxfield, Archidekt, MTGO, or a plain list of names.
+        </p>
+      </section>
+
+      <section class="overview">
+        <h2>Your decks</h2>
+        <div class="grid">
+          @for (d of store.decks(); track d.id) {
+            <button
+              type="button"
+              class="deck-tile"
+              [title]="d.name + ' — click to view, right-click for options'"
+              (click)="openView(d)"
+              (contextmenu)="openMenu($event, d)"
+            >
+              @if (firstCardSrc(d); as bg) {
+                <img class="deck-bg" [src]="bg" alt="" draggable="false" />
+              }
+              <span class="deck-name">{{ d.name }}</span>
+              <span class="deck-count">{{ deckSize(d) }}</span>
+            </button>
+          } @empty {
+            <p class="empty">No decks yet — import one on the left.</p>
+          }
+        </div>
+      </section>
+    </div>
+  }
 
   @if (menu(); as m) {
     <div class="deck-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+      <button type="button" class="rename" (click)="startRename()">Rename deck</button>
       <button type="button" (click)="deleteDeck()">Delete deck</button>
     </div>
   }
 </div>
+
+@if (renaming(); as r) {
+  <app-dialog heading="Rename deck" (close)="renaming.set(null)">
+    <form class="rename-form" (submit)="$event.preventDefault(); saveRename()">
+      <input
+        type="text"
+        [value]="r.name"
+        (input)="onRenameInput($event)"
+        autofocus
+        maxlength="60"
+      />
+      <button type="submit" class="primary" [disabled]="!r.name.trim()">Save</button>
+    </form>
+  </app-dialog>
+}

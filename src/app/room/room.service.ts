@@ -94,9 +94,11 @@ export class RoomService {
   async createRoom(roomName: string, displayName: string): Promise<string | null> {
     const ownerId = this.supabase.userId();
     if (!ownerId) return 'Not signed in';
+    const name = roomName.trim();
+    if (name.length < 3) return 'Room name needs at least 3 characters';
     const { data, error } = await this.supabase.client
       .from('rooms')
-      .insert({ owner_id: ownerId, name: roomName.trim() || null })
+      .insert({ owner_id: ownerId, name })
       .select('id, code, name')
       .single();
     if (error || !data) return error?.message ?? 'Could not create room';
@@ -114,7 +116,12 @@ export class RoomService {
     )?.[0];
     if (!row) return 'Room not found';
     return this.enterRoom(
-      { id: row.room_id, code: row.room_code, name: row.room_name, ownerId: row.room_owner ?? null },
+      {
+        id: row.room_id,
+        code: row.room_code,
+        name: row.room_name,
+        ownerId: row.room_owner ?? null,
+      },
       displayName,
     );
   }

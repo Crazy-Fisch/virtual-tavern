@@ -26,9 +26,18 @@ export class SupabaseService {
     this._session.set(data.session);
   }
 
-  /** Returns an error message, or null on success (signed in immediately — email confirmation is off). */
-  async signUp(email: string, password: string): Promise<string | null> {
-    const { error } = await this.client.auth.signUp({ email, password });
+  /**
+   * Create an account, choosing the username shown everywhere (stored as
+   * display_name in user_metadata, so the account is never "Guest"). No
+   * uniqueness check — duplicates are tolerated. Signed in immediately (email
+   * confirmation is off). Returns an error message, or null on success.
+   */
+  async signUp(email: string, password: string, username: string): Promise<string | null> {
+    const { error } = await this.client.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: username.trim().slice(0, 16) } },
+    });
     return error?.message ?? null;
   }
 

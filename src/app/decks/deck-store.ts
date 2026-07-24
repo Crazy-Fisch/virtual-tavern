@@ -3,8 +3,8 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { Deck, DeckEntry } from './deck.types';
 import { parseDecklist } from './decklist-parser';
 
-/** Legacy localStorage key from when decks were per-browser; migrated on first load. */
-const LEGACY_DECKS_KEY = 'virtual-tavern.decks';
+/** Per-browser localStorage key holding a guest's decks (also the legacy key). */
+const LOCAL_DECKS_KEY = 'virtual-tavern.decks';
 
 function isEntry(value: unknown): value is DeckEntry {
   const entry = value as Partial<DeckEntry> | null;
@@ -22,15 +22,18 @@ function isDeck(value: unknown): value is Deck {
   );
 }
 
+function cleanName(name: string): string {
+  return name.trim().slice(0, 60) || 'Unnamed deck';
+}
+
 /**
- * The player's decks, persisted per account in Supabase (`decks` table,
- * owner-only RLS). Deck persistence is an account feature: guests and
- * signed-out users have no decks and cannot import any (`available`), which
- * hides the Decks screen for them. Decks imported before this existed (the
- * old per-browser localStorage) are uploaded once on the first signed-in load.
- * Phase 1 is import-only (see deck.types.ts); the Decks page creates and
- * deletes decks here, and the in-room deck chooser reads them when a player
- * sits down at the table.
+ * The player's decks. Storage follows the session: guests keep decks in the
+ * browser (localStorage — per-device, lost if the browser is cleared, which is
+ * acceptable); signed-in accounts persist them in Supabase (`decks` table,
+ * owner-only RLS). Signing into an account uploads any local guest decks into
+ * that account once (`syncLocalToAccount`), so a guest who registers keeps what
+ * they built. The Decks page creates, renames, and deletes decks here, and the
+ * in-room deck chooser reads them when a player sits down at the table.
  */
 @Injectable({ providedIn: 'root' })
 export class DeckStore {
@@ -39,88 +42,132 @@ export class DeckStore {
   private readonly _decks = signal<Deck[]>([]);
   readonly decks = this._decks.asReadonly();
 
-  /** Whether this session can keep decks: signed in with an account, not a guest. */
-  readonly available = computed(() => !!this.supabase.userId() && !this.supabase.isGuest());
+  /** Whether this session can keep decks at all — anyone signed in (guest or account). */
+  readonly available = computed(() => !!this.supabase.userId());
+
+  /** True when decks persist to the cloud account (signed in, not a guest). */
+  private readonly onAccount = computed(() => !!this.supabase.userId() && !this.supabase.isGuest());
 
   constructor() {
-    // Follow the session: load the account's decks on sign-in, drop them on
-    // sign-out (or for guests, who never have any).
+    // Follow the session: load the account's decks on sign-in (merging any
+    // local guest decks), read local decks for a guest, and clear on sign-out.
     effect(() => {
       const uid = this.supabase.userId();
-      const usable = this.available();
+      const account = this.onAccount();
       untracked(() => {
-        this._decks.set([]);
-        if (uid && usable) void this.load(uid);
+        if (!uid) {
+          this._decks.set([]);
+        } else if (account) {
+          this._decks.set([]);
+          void this.loadAccount(uid);
+        } else {
+          this._decks.set(this.readLocal());
+        }
       });
     });
   }
 
   /**
-   * Parse a pasted decklist and store it on the account. Returns an error
-   * message, or null on success (matching the RoomService convention).
+   * Parse a pasted decklist and store it (locally for guests, on the account
+   * otherwise). Returns an error message, or null on success.
    */
   async import(name: string, decklist: string): Promise<string | null> {
-    if (!this.available()) return 'Deck import needs an account (guests cannot keep decks).';
+    if (!this.available()) return 'Sign in (or continue as a guest) to keep decks.';
     const list = parseDecklist(decklist);
     if (list.length === 0) return 'No cards found — paste a decklist like “4 Lightning Bolt”.';
-    const deck: Deck = {
-      id: crypto.randomUUID(),
-      name: name.trim().slice(0, 60) || 'Unnamed deck',
-      list,
-    };
-    // Optimistic append, rolled back if the insert fails.
+    const deck: Deck = { id: crypto.randomUUID(), name: cleanName(name), list };
+    // Optimistic append, rolled back if the account insert fails.
     this._decks.update((decks) => [...decks, deck]);
-    const { error } = await this.supabase.client
-      .from('decks')
-      .insert({ id: deck.id, owner_id: this.supabase.userId(), name: deck.name, list: deck.list });
-    if (error) {
-      this._decks.update((decks) => decks.filter((d) => d.id !== deck.id));
-      return error.message;
+    if (this.onAccount()) {
+      const { error } = await this.supabase.client
+        .from('decks')
+        .insert({
+          id: deck.id,
+          owner_id: this.supabase.userId(),
+          name: deck.name,
+          list: deck.list,
+        });
+      if (error) {
+        this._decks.update((decks) => decks.filter((d) => d.id !== deck.id));
+        return error.message;
+      }
+    } else {
+      this.persistLocal();
     }
     return null;
   }
 
-  remove(id: string): void {
-    this._decks.update((decks) => decks.filter((d) => d.id !== id));
-    void this.supabase.client.from('decks').delete().eq('id', id);
+  /** Rename a deck, persisting to whichever store backs this session. */
+  rename(id: string, name: string): void {
+    const clean = cleanName(name);
+    this._decks.update((decks) => decks.map((d) => (d.id === id ? { ...d, name: clean } : d)));
+    if (this.onAccount())
+      void this.supabase.client.from('decks').update({ name: clean }).eq('id', id);
+    else this.persistLocal();
   }
 
-  private async load(uid: string): Promise<void> {
+  remove(id: string): void {
+    this._decks.update((decks) => decks.filter((d) => d.id !== id));
+    if (this.onAccount()) void this.supabase.client.from('decks').delete().eq('id', id);
+    else this.persistLocal();
+  }
+
+  private async loadAccount(uid: string): Promise<void> {
     const { data, error } = await this.supabase.client
       .from('decks')
       .select('id, name, list')
       .order('created_at');
     if (error || this.supabase.userId() !== uid) return; // failed, or session moved on
-    const decks = ((data ?? []) as unknown[]).filter(isDeck);
-    this._decks.set([...decks, ...(await this.migrateLegacy(uid, decks))]);
+    const account = ((data ?? []) as unknown[]).filter(isDeck);
+    const uploaded = await this.syncLocalToAccount(uid, account);
+    if (this.supabase.userId() === uid) this._decks.set([...account, ...uploaded]);
   }
 
-  /** One-time upload of decks imported back when they lived in localStorage. */
-  private async migrateLegacy(uid: string, existing: Deck[]): Promise<Deck[]> {
-    try {
-      const raw = localStorage.getItem(LEGACY_DECKS_KEY);
-      if (!raw) return [];
-      const known = new Set(existing.map((d) => d.id));
-      const parsed: unknown = JSON.parse(raw);
-      const legacy = (Array.isArray(parsed) ? parsed.filter(isDeck) : []).filter(
-        (d) => !known.has(d.id),
-      );
-      if (legacy.length > 0) {
-        const { error } = await this.supabase.client.from('decks').insert(
-          legacy.map((d) => ({
-            id: d.id,
-            owner_id: uid,
-            name: d.name.trim().slice(0, 60) || 'Unnamed deck',
-            list: d.list,
-          })),
-        );
-        if (error) return []; // keep the local copy for a later retry
-      }
-      localStorage.removeItem(LEGACY_DECKS_KEY);
-      return legacy;
-    } catch {
-      localStorage.removeItem(LEGACY_DECKS_KEY); // corrupt state — discard
+  /**
+   * Upload local (guest) decks into the freshly signed-in account, then clear
+   * the local store. Decks already present on the account (by id) are skipped,
+   * so this is safe to run on every account load.
+   */
+  private async syncLocalToAccount(uid: string, existing: Deck[]): Promise<Deck[]> {
+    const known = new Set(existing.map((d) => d.id));
+    const local = this.readLocal().filter((d) => !known.has(d.id));
+    if (local.length === 0) {
+      this.clearLocal();
       return [];
+    }
+    const { error } = await this.supabase.client
+      .from('decks')
+      .insert(
+        local.map((d) => ({ id: d.id, owner_id: uid, name: cleanName(d.name), list: d.list })),
+      );
+    if (error) return []; // keep the local copy for a later retry
+    this.clearLocal();
+    return local;
+  }
+
+  private readLocal(): Deck[] {
+    try {
+      const raw = localStorage.getItem(LOCAL_DECKS_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter(isDeck) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private persistLocal(): void {
+    try {
+      localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify(this._decks()));
+    } catch {
+      // Storage unavailable/full — decks simply won't survive a reload.
+    }
+  }
+
+  private clearLocal(): void {
+    try {
+      localStorage.removeItem(LOCAL_DECKS_KEY);
+    } catch {
+      // ignore
     }
   }
 }

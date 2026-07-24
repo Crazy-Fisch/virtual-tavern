@@ -71,9 +71,7 @@ export class ZoneStore {
    * a deck. Until then the zone UI stays hidden (the room's "choose deck"
    * gate); zones are created by loadDeck, never implicitly.
    */
-  readonly hasMine = computed<boolean>(() =>
-    this.all().some((p) => p.uid === this.room.userId()),
-  );
+  readonly hasMine = computed<boolean>(() => this.all().some((p) => p.uid === this.room.userId()));
 
   /**
    * Sit down at the table: create my zones with the chosen deck (shuffled),

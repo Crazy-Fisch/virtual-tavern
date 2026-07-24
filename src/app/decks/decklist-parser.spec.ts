@@ -32,12 +32,12 @@ describe('parseDecklist', () => {
   });
 
   it('parses an Archidekt export: category and foil markers', () => {
-    expect(parseDecklist('1x Abrade (voc) 220 *F* [Removal]\n1x Sol Ring (c21) 263 [Ramp]')).toEqual(
-      [
-        { card: 'Abrade', count: 1 },
-        { card: 'Sol Ring', count: 1 },
-      ],
-    );
+    expect(
+      parseDecklist('1x Abrade (voc) 220 *F* [Removal]\n1x Sol Ring (c21) 263 [Ramp]'),
+    ).toEqual([
+      { card: 'Abrade', count: 1 },
+      { card: 'Sol Ring', count: 1 },
+    ]);
   });
 
   it('handles the MTGO SB: prefix', () => {

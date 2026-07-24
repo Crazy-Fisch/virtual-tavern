@@ -5,11 +5,12 @@ import { SceneCamera } from '../scene-camera';
 
 /**
  * Fixed camera base pose: a near-bird's-eye view (~20° off vertical) from the
- * player's table end (+Z for the room owner), high enough that the whole 6 m
- * table fits with little perspective shift. Tabletop surface is at y ≈ 0.2.
- * Non-owners get the pose mirrored to the opposite (−Z) end of the table.
+ * player's table end (+Z for the room owner). Pulled in from the old 5.0 m to
+ * 4.2 m so cards read larger and clearer (the far table end crops slightly,
+ * which is fine — each player mostly cares about their own half). Tabletop
+ * surface is at y ≈ 0.2. Non-owners get the pose mirrored to the −Z end.
  */
-const CAMERA_POS = new Vector3(0, 5.0, 1.8);
+const CAMERA_POS = new Vector3(0, 4.2, 1.55);
 const CAMERA_TARGET = new Vector3(0, 0.2, -0.2);
 
 /** Fraction of the half-screen (from center) with no tilt; beyond it the tilt

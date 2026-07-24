@@ -1,7 +1,8 @@
 <div class="panel">
   <div class="head">
     @if (room.currentRoom(); as r) {
-      <span class="badge">{{ r.code }}</span>
+      <span class="room-name" [title]="r.name || 'Room'">{{ r.name || 'Room' }}</span>
+      <span class="badge" title="Room code — share it to invite others">{{ r.code }}</span>
     }
     <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
     <button class="leave" (click)="leave()">Leave</button>

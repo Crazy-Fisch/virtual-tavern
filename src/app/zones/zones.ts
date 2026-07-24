@@ -1,15 +1,23 @@
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { CardDatabaseService } from '../carddb/card-database.service';
 import { DeckStore } from '../decks/deck-store';
 import { Deck, deckSize } from '../decks/deck.types';
 import { RoomService } from '../room/room.service';
 import { AssetLoaderService } from '../scene/asset-loader.service';
-import { CardInteractions, DRAG_Y } from '../scene/card/card-interactions';
+import { CardDropTarget, CardInteractions, DRAG_Y } from '../scene/card/card-interactions';
 import { CardStore } from '../scene/card/card-store';
 import { newCardId } from '../scene/card/card.types';
 import { Dialog } from '../shared/dialog/dialog';
 import { ZoneStore } from './zone-store';
-import { PlayerZones, ZoneCard } from './zone.types';
+import { PlayerZones, ZoneCard, ZoneKind } from './zone.types';
 
 /** Screen anchor of the small right-click menu on my deck/graveyard piles. */
 type ZoneMenu = { kind: 'deck' | 'graveyard'; x: number; y: number };
@@ -20,6 +28,9 @@ const FAN_SPREAD_DEG = 42;
 
 /** Cursor travel (CSS px) past which a hand-card press becomes a play drag. */
 const HAND_DRAG_THRESHOLD_PX = 4;
+
+/** Breathing room kept beside a scrolled hand so its end cards stay reachable. */
+const HAND_SCROLL_MARGIN_PX = 48;
 
 /**
  * The DOM-side zone UI over the scene (plain Angular/HTML, not Three): my hand
@@ -48,10 +59,12 @@ export class Zones implements OnDestroy {
   protected readonly decks = inject(DeckStore);
   protected readonly db = inject(CardDatabaseService);
   private readonly cards = inject(CardStore);
-  private readonly interactions = inject(CardInteractions);
+  protected readonly interactions = inject(CardInteractions);
   private readonly assets = inject(AssetLoaderService);
   private readonly room = inject(RoomService);
   protected readonly deckSize = deckSize;
+
+  private readonly handEl = viewChild<ElementRef<HTMLDivElement>>('hand');
 
   /** Pressed hand card; becomes a play drag past HAND_DRAG_THRESHOLD_PX. */
   private pendingDrag: { card: ZoneCard; x: number; y: number } | null = null;
@@ -61,6 +74,20 @@ export class Zones implements OnDestroy {
   protected readonly examiningUid = signal<string | null>(null);
   /** Whether the "Choose Deck" picker dialog is open. */
   protected readonly choosingDeck = signal(false);
+  /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
+  protected readonly handScroll = signal(0);
+
+  /**
+   * A card dropped over a zone's UI is routed there instead of onto the table.
+   * Hit-tested via elementFromPoint so it works regardless of which zone
+   * widgets are currently rendered; only active once I've joined the game.
+   */
+  private readonly dropTargets: CardDropTarget[] = (['deck', 'graveyard', 'hand'] as const).map(
+    (kind) => ({
+      hitTest: (x, y) => this.overZone(x, y, kind),
+      accept: (card) => this.zones.takeFromTable(card, kind),
+    }),
+  );
 
   protected readonly examining = computed<PlayerZones | null>(() => {
     const uid = this.examiningUid();
@@ -75,6 +102,7 @@ export class Zones implements OnDestroy {
     // The tavern guard guarantees the room (and its world snapshot) is loaded
     // before the scene tree mounts.
     this.zones.refreshOwnerName();
+    for (const target of this.dropTargets) this.interactions.registerDropTarget(target);
   }
 
   /**
@@ -86,7 +114,11 @@ export class Zones implements OnDestroy {
     const cards = deck.list.flatMap((entry) => {
       const record = this.db.lookup(entry.card);
       return Array.from({ length: entry.count }, (): ZoneCard => {
-        return { id: crypto.randomUUID(), name: record?.name ?? entry.card, src: record?.src ?? '' };
+        return {
+          id: crypto.randomUUID(),
+          name: record?.name ?? entry.card,
+          src: record?.src ?? '',
+        };
       });
     });
     this.zones.loadDeck(cards);
@@ -104,6 +136,38 @@ export class Zones implements OnDestroy {
 
   ngOnDestroy(): void {
     this.clearPendingDrag();
+    for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
+  }
+
+  /** CSS transform positioning the fanned hand, including any scroll shift. */
+  protected handTransform(): string {
+    return `translateX(calc(-50% + ${this.handScroll()}px))`;
+  }
+
+  /**
+   * Wheel over the hand scrolls it sideways (deltaY → horizontal), so a hand
+   * too wide to fit can be panned to reveal cards clipped past the edges.
+   */
+  protected onHandWheel(event: WheelEvent): void {
+    const el = this.handEl()?.nativeElement;
+    if (!el) return;
+    const overflow = el.offsetWidth - window.innerWidth + HAND_SCROLL_MARGIN_PX;
+    if (overflow <= 0) {
+      if (this.handScroll() !== 0) this.handScroll.set(0);
+      return;
+    }
+    event.preventDefault();
+    const max = overflow / 2;
+    this.handScroll.set(Math.max(-max, Math.min(max, this.handScroll() - event.deltaY)));
+  }
+
+  /** True when the screen point sits over one of my zone widgets. */
+  private overZone(x: number, y: number, kind: ZoneKind): boolean {
+    if (!this.zones.hasMine()) return false;
+    const selector =
+      kind === 'deck' ? '.pile.deck' : kind === 'graveyard' ? '.pile.grave' : '.hand';
+    const el = document.elementFromPoint(x, y);
+    return el instanceof Element && !!el.closest(selector);
   }
 
   /**
@@ -124,9 +188,7 @@ export class Zones implements OnDestroy {
   private readonly onPendingDragMove = (event: PointerEvent): void => {
     const pending = this.pendingDrag;
     if (!pending) return;
-    if (
-      Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < HAND_DRAG_THRESHOLD_PX
-    ) {
+    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < HAND_DRAG_THRESHOLD_PX) {
       return;
     }
     this.clearPendingDrag();

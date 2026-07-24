@@ -224,6 +224,29 @@ describe('CardInteractions', () => {
       expect(interactions.draggingId()).toBeNull();
     });
 
+    it('a drag released over a registered drop target routes the card there, not the table', () => {
+      const accept = vi.fn();
+      const target = { hitTest: () => true, accept };
+      interactions.registerDropTarget(target);
+      down(screenAt(0, 0.5, 0));
+      move(screenAt(2, 0, 1));
+      up(screenAt(2, 0, 1));
+      expect(accept).toHaveBeenCalledOnce();
+      expect((accept.mock.calls[0]![0] as { id: string }).id).toBe(cardId);
+      expect(store.card(cardId)!.position).toEqual([0, 0.5, 0]); // not placed on the table
+      expect(interactions.draggingId()).toBeNull();
+      interactions.unregisterDropTarget(target);
+    });
+
+    it('exposes a cursor-following drag ghost while dragging and clears it on drop', () => {
+      down(screenAt(0, 0.5, 0));
+      move(screenAt(2, 0, 1));
+      expect(interactions.dragGhost()).not.toBeNull();
+      expect(interactions.dragGhost()!.src).toBe('https://example.com/worm.jpg');
+      up(screenAt(2, 0, 1));
+      expect(interactions.dragGhost()).toBeNull();
+    });
+
     it('a drag released where the ray hits nothing snaps the card back', () => {
       const offTable = screenAt(15, 0, 15); // beyond the 20×20 surface
       down(screenAt(0, 0.5, 0));

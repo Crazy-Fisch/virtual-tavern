@@ -38,7 +38,17 @@ button {
 .head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+// Room name leads the header; it takes the slack so the badges/Leave sit right.
+.room-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge {

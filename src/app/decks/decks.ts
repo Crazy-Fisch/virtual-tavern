@@ -1,22 +1,25 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { CardDatabaseService } from '../carddb/card-database.service';
+import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
+import { Dialog } from '../shared/dialog/dialog';
 import { DeckStore } from './deck-store';
 import { Deck, deckSize } from './deck.types';
 
 /** Screen anchor (relative to the page) of the right-click menu on a deck tile. */
-type DeckMenu = { deckId: string; x: number; y: number };
+type DeckMenu = { deck: Deck; x: number; y: number };
 
 /**
- * The deck screen: import a pasted decklist (phase 1 — no editing) and see
- * the deck overview, a grid of squares with the deck name inside and the card
- * count below. Right-clicking a tile opens a context menu to delete the deck.
- * Also surfaces the card database status, since imports resolve card names
- * against it when a deck is later loaded into a game.
+ * The deck screen: import a pasted decklist (phase 1 — no editing) and see the
+ * deck overview, a grid of squares (each backgrounded by its first card's art)
+ * with the deck name inside and the card count below. Right-clicking a tile
+ * opens a context menu to rename or delete the deck; left-clicking opens the
+ * full-page deck view — a scrollable grid of every card resolved against the
+ * card database. Also surfaces the card database status, since imports resolve
+ * card names against it when a deck is later loaded into a game.
  */
 @Component({
   selector: 'app-decks',
-  imports: [RouterLink],
+  imports: [RouterLink, Dialog],
   templateUrl: './decks.html',
   styleUrl: './decks.scss',
   standalone: true,
@@ -24,13 +27,17 @@ type DeckMenu = { deckId: string; x: number; y: number };
 })
 export class Decks {
   protected readonly store = inject(DeckStore);
-  private readonly db = inject(CardDatabaseService);
+  protected readonly db = inject(CardDatabaseService);
   protected readonly deckSize = deckSize;
 
   protected readonly name = signal('');
   protected readonly list = signal('');
   protected readonly error = signal<string | null>(null);
   protected readonly menu = signal<DeckMenu | null>(null);
+  /** The deck whose full-page card view is open, or null for the overview. */
+  protected readonly viewing = signal<Deck | null>(null);
+  /** In-flight rename: the deck plus the edited name text, or null when closed. */
+  protected readonly renaming = signal<{ id: string; name: string } | null>(null);
 
   protected readonly dbLabel = computed(() => {
     switch (this.db.status()) {
@@ -61,16 +68,53 @@ export class Decks {
     this.list.set('');
   }
 
+  /** Resolve a decklist name to its database record (undefined = unknown card). */
+  protected resolve(name: string): CardRecord | undefined {
+    return this.db.lookup(name);
+  }
+
+  /** First card's art, used as a deck tile's cutout background (null if unknown). */
+  protected firstCardSrc(deck: Deck): string | null {
+    const first = deck.list[0];
+    return (first && this.db.lookup(first.card)?.src) || null;
+  }
+
+  protected openView(deck: Deck): void {
+    this.menu.set(null);
+    this.viewing.set(deck);
+  }
+
+  protected closeView(): void {
+    this.viewing.set(null);
+  }
+
   protected openMenu(event: MouseEvent, deck: Deck): void {
     event.preventDefault();
     const host = (event.currentTarget as HTMLElement).closest('app-decks')!;
     const rect = host.getBoundingClientRect();
-    this.menu.set({ deckId: deck.id, x: event.clientX - rect.left, y: event.clientY - rect.top });
+    this.menu.set({ deck, x: event.clientX - rect.left, y: event.clientY - rect.top });
+  }
+
+  protected startRename(): void {
+    const menu = this.menu();
+    if (menu) this.renaming.set({ id: menu.deck.id, name: menu.deck.name });
+    this.menu.set(null);
+  }
+
+  protected onRenameInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.renaming.update((r) => (r ? { ...r, name: value } : r));
+  }
+
+  protected saveRename(): void {
+    const renaming = this.renaming();
+    if (renaming && renaming.name.trim()) this.store.rename(renaming.id, renaming.name);
+    this.renaming.set(null);
   }
 
   protected deleteDeck(): void {
     const menu = this.menu();
-    if (menu) this.store.remove(menu.deckId);
+    if (menu) this.store.remove(menu.deck.id);
     this.menu.set(null);
   }
 

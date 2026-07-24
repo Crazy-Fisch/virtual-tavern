@@ -3,7 +3,7 @@ import { vi } from 'vitest';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DeckStore } from './deck-store';
 
-const LEGACY_DECKS_KEY = 'virtual-tavern.decks';
+const LOCAL_DECKS_KEY = 'virtual-tavern.decks';
 
 type QueryResult = { data: unknown; error: { message: string } | null };
 type Call = { method: string; args: unknown[] };
@@ -52,6 +52,11 @@ const flush = async () => {
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r));
 };
 
+const readLocal = (): unknown[] => {
+  const raw = localStorage.getItem(LOCAL_DECKS_KEY);
+  return raw ? (JSON.parse(raw) as unknown[]) : [];
+};
+
 describe('DeckStore', () => {
   beforeEach(() => localStorage.clear());
 
@@ -65,13 +70,32 @@ describe('DeckStore', () => {
     expect(store.available()).toBe(true);
   });
 
-  it('guests have no decks and cannot import', async () => {
+  it('guests keep decks locally and can import (no backend calls)', async () => {
     const { store, client } = setup({ guest: true });
     await flush();
-    expect(store.available()).toBe(false);
+    expect(store.available()).toBe(true);
+    expect(await store.import('Burn', '4 Lightning Bolt')).toBeNull();
+    expect(store.decks()).toMatchObject([{ name: 'Burn' }]);
     expect(client.from).not.toHaveBeenCalled();
-    expect(await store.import('Burn', '4 Lightning Bolt')).toMatch(/account/);
+    expect(readLocal()).toHaveLength(1);
+  });
+
+  it('a returning guest loads their decks from localStorage', async () => {
+    const local = { id: 'g1', name: 'Local', list: [{ card: 'Forest', count: 3 }] };
+    localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify([local]));
+    const { store, client } = setup({ guest: true });
+    await flush();
+    expect(store.decks()).toEqual([local]);
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('signed-out visitors have no decks and cannot import', async () => {
+    const { store, client } = setup({ signedOut: true });
+    await flush();
+    expect(store.available()).toBe(false);
+    expect(await store.import('Burn', '4 Lightning Bolt')).toMatch(/Sign in/);
     expect(store.decks()).toEqual([]);
+    expect(client.from).not.toHaveBeenCalled();
   });
 
   it('imports a parsed decklist and stores it on the account', async () => {
@@ -107,7 +131,7 @@ describe('DeckStore', () => {
     expect(store.decks()[0]!.name).toBe('Unnamed deck');
   });
 
-  it('rolls back the optimistic deck when the insert fails', async () => {
+  it('rolls back the optimistic deck when the account insert fails', async () => {
     const { store } = setup({
       results: [
         { data: [], error: null }, // initial load
@@ -119,6 +143,27 @@ describe('DeckStore', () => {
     expect(store.decks()).toEqual([]);
   });
 
+  it('renames an account deck optimistically and on the backend', async () => {
+    const deck = { id: 'd1', name: 'Old', list: [{ card: 'Island', count: 1 }] };
+    const { store, calls } = setup({ results: [{ data: [deck], error: null }] });
+    await flush();
+    store.rename('d1', 'New Name');
+    expect(store.decks()[0]!.name).toBe('New Name');
+    const update = calls.find((c) => c.method === 'update')!;
+    expect(update.args[0]).toMatchObject({ name: 'New Name' });
+  });
+
+  it('renames a guest deck in localStorage', async () => {
+    const local = { id: 'g1', name: 'Old', list: [{ card: 'Forest', count: 3 }] };
+    localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify([local]));
+    const { store, client } = setup({ guest: true });
+    await flush();
+    store.rename('g1', 'Renamed');
+    expect(store.decks()[0]!.name).toBe('Renamed');
+    expect((readLocal()[0] as { name: string }).name).toBe('Renamed');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('remove deletes the deck optimistically and on the backend', async () => {
     const deck = { id: 'd1', name: 'Keep', list: [{ card: 'Island', count: 1 }] };
     const { store, calls } = setup({ results: [{ data: [deck], error: null }] });
@@ -128,14 +173,14 @@ describe('DeckStore', () => {
     expect(calls.find((c) => c.method === 'delete')).toBeDefined();
   });
 
-  it('uploads legacy localStorage decks once, then clears the key', async () => {
-    const legacy = { id: 'old1', name: 'Old Deck', list: [{ card: 'Swamp', count: 2 }] };
-    localStorage.setItem(LEGACY_DECKS_KEY, JSON.stringify([legacy, { nope: true }]));
-    const { store, calls } = setup();
+  it('uploads a guest’s local decks into a new account on sign-in, then clears local', async () => {
+    const local = { id: 'old1', name: 'Old Deck', list: [{ card: 'Swamp', count: 2 }] };
+    localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify([local, { nope: true }]));
+    const { store, calls } = setup(); // account load with no server decks yet
     await flush();
-    expect(store.decks()).toEqual([legacy]);
+    expect(store.decks()).toEqual([local]);
     const insert = calls.find((c) => c.method === 'insert')!;
     expect(insert.args[0]).toMatchObject([{ id: 'old1', owner_id: 'user-1', name: 'Old Deck' }]);
-    expect(localStorage.getItem(LEGACY_DECKS_KEY)).toBeNull();
+    expect(localStorage.getItem(LOCAL_DECKS_KEY)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
-// Spans the scene like CardOverlay, but must never block pointer events meant
-// for the canvas — only the zone widgets themselves are hit-testable.
+// Spans the scene but must never block pointer events meant for the canvas —
+// only the zone widgets themselves are hit-testable.
 :host {
   position: absolute;
   inset: 0;
@@ -143,11 +143,12 @@ app-dialog {
 }
 
 // ---------- my hand ----------
+// Horizontal transform (with the wheel-scroll shift) is bound inline; the host's
+// overflow:hidden clips a hand too wide to fit, and scrolling pans it.
 .hand {
   position: absolute;
   bottom: -30px;
   left: 50%;
-  transform: translateX(-50%);
   display: flex;
   justify-content: center;
 }
@@ -246,6 +247,29 @@ app-dialog {
   .count,
   .label {
     position: relative;
+  }
+}
+
+// ---------- dragged-card ghost ----------
+// Fixed at the cursor above every overlay; non-interactive so drop routing's
+// elementFromPoint still sees the zone beneath it. Card-back look when face-down.
+.drag-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 130px;
+  aspect-ratio: 63 / 88;
+  transform: translate(-50%, -50%);
+  border-radius: 8px;
+  overflow: hidden;
+  pointer-events: none;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(160deg, #3d2f6e, #241c44);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 }
 
