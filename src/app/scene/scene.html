@@ -3,6 +3,9 @@
 @for (card of cards(); track card.id) {
   <app-card [state]="card" />
 }
+@for (item of items(); track item.id) {
+  <app-item [state]="item" />
+}
 <app-zones />
 <app-card-overlay />
 <app-util-window />

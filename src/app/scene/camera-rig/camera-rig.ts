@@ -4,14 +4,16 @@ import { RoomService } from '../../room/room.service';
 import { SceneCamera } from '../scene-camera';
 
 /**
- * Fixed camera base pose: a near-bird's-eye view (~20° off vertical) from the
- * player's table end (+Z for the room owner). Pulled in from the old 5.0 m to
- * 4.2 m so cards read larger and clearer (the far table end crops slightly,
- * which is fine — each player mostly cares about their own half). Tabletop
- * surface is at y ≈ 0.2. Non-owners get the pose mirrored to the −Z end.
+ * Fixed camera base pose: a bird's-eye view ~26° off vertical from the player's
+ * table end (+Z for the room owner), looking down at the tabletop (y ≈ 0.2).
+ * The camera is orthographic (see SceneCamera), so this distance only decides
+ * clipping, never the on-screen size of anything — how much table is framed is
+ * SceneCamera's VIEW_HEIGHT. Non-owners get the pose mirrored to the −Z end.
  */
-const CAMERA_POS = new Vector3(0, 4.2, 1.55);
-const CAMERA_TARGET = new Vector3(0, 0.2, -0.2);
+const CAMERA_POS = new Vector3(0, 6, 2.8);
+// Aimed slightly toward the player's own end, so their whole half of the table
+// is framed and the crop falls on the far end they care least about.
+const CAMERA_TARGET = new Vector3(0, 0.2, 0.3);
 
 /** Fraction of the half-screen (from center) with no tilt; beyond it the tilt
  * ramps linearly to its maximum at the screen edge. */

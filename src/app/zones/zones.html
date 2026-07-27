@@ -1,20 +1,47 @@
-<!-- Other players' zone sizes; graveyards are open for examination. -->
+<!-- Other players' zone sizes; graveyard and exile are open for examination. -->
 <div class="others">
   @for (p of zones.others(); track p.uid) {
     <div class="player">
       <span class="name">{{ p.name }}</span>
       <span class="stat" title="Cards in hand">✋ {{ p.hand.length }}</span>
       <span class="stat" title="Cards in deck">🂠 {{ p.deck.length }}</span>
-      <button type="button" class="stat grave" title="Examine graveyard" (click)="examine(p.uid)">
+      <button
+        type="button"
+        class="stat open"
+        title="Examine graveyard"
+        (click)="examine(p.uid, 'graveyard')"
+      >
         ⚰ {{ p.graveyard.length }}
+      </button>
+      <button
+        type="button"
+        class="stat open"
+        title="Examine exile"
+        (click)="examine(p.uid, 'exile')"
+      >
+        ✦ {{ p.exile.length }}
       </button>
     </div>
   }
 </div>
 
 @if (!zones.hasMine()) {
-  <!-- Not in the game yet: the zone UI waits until a deck is chosen. -->
-  <button type="button" class="choose-deck" (click)="choosingDeck.set(true)">Choose Deck</button>
+  <!-- Not in the game yet: the zone UI waits until a deck is chosen *and*
+       confirmed — confirming is what loads it and warms the card images. -->
+  <div class="gate">
+    @if (pendingDeck(); as picked) {
+      <p class="gate-picked">
+        <span class="gate-deck">{{ picked.name }}</span>
+        <span class="gate-count">{{ deckSize(picked) }} cards</span>
+      </p>
+      <button type="button" class="primary" (click)="confirmDeck()">Confirm deck</button>
+      <button type="button" class="secondary" (click)="choosingDeck.set(true)">
+        Choose another deck
+      </button>
+    } @else {
+      <button type="button" class="primary" (click)="choosingDeck.set(true)">Choose Deck</button>
+    }
+  </div>
 } @else if (zones.mine(); as me) {
   <!-- My hand, fanned like physically held cards. Drag a card onto the table to
        play it; wheel over the hand to pan a hand too wide to fit. -->
@@ -27,7 +54,7 @@
         [title]="'Drag onto the table to play ' + c.name"
         (pointerdown)="startDrag($event, c)"
       >
-        <img [src]="c.src" [alt]="c.name" draggable="false" />
+        <img [src]="c.src" [alt]="c.name" crossorigin="anonymous" draggable="false" />
       </button>
     }
   </div>
@@ -48,14 +75,27 @@
       type="button"
       class="pile grave"
       title="Graveyard — click to examine"
-      (click)="examine(me.uid)"
+      (click)="examine(me.uid, 'graveyard')"
       (contextmenu)="openMenu($event, 'graveyard')"
     >
       @if (me.graveyard.at(-1); as top) {
-        <img [src]="top.src" [alt]="top.name" />
+        <img [src]="top.src" [alt]="top.name" crossorigin="anonymous" />
       }
       <span class="count">{{ me.graveyard.length }}</span>
       <span class="label">Grave</span>
+    </button>
+    <button
+      type="button"
+      class="pile exile"
+      title="Exile — click to examine"
+      (click)="examine(me.uid, 'exile')"
+      (contextmenu)="openMenu($event, 'exile')"
+    >
+      @if (me.exile.at(-1); as top) {
+        <img [src]="top.src" [alt]="top.name" crossorigin="anonymous" />
+      }
+      <span class="count">{{ me.exile.length }}</span>
+      <span class="label">Exile</span>
     </button>
   </div>
 }
@@ -65,7 +105,7 @@
     @if (m.kind === 'deck') {
       <button type="button" (click)="shuffle()">Shuffle</button>
     } @else {
-      <button type="button" (click)="examine(zones.mine().uid)">Examine</button>
+      <button type="button" (click)="examine(zones.mine().uid, m.kind)">Examine</button>
     }
   </div>
 }
@@ -74,7 +114,7 @@
   <app-dialog heading="Choose a deck" (close)="choosingDeck.set(false)">
     <div class="deck-choices">
       @for (d of decks.decks(); track d.id) {
-        <button type="button" class="deck-tile" (click)="chooseDeck(d)">
+        <button type="button" class="deck-tile" (click)="pickDeck(d)">
           <span class="deck-name">{{ d.name }}</span>
           <span class="deck-count">{{ deckSize(d) }} cards</span>
         </button>
@@ -93,17 +133,20 @@
 @if (interactions.dragGhost(); as g) {
   <div class="drag-ghost" [style.left.px]="g.x" [style.top.px]="g.y">
     @if (g.faceUp && g.src) {
-      <img [src]="g.src" alt="" draggable="false" />
+      <img [src]="g.src" alt="" crossorigin="anonymous" draggable="false" />
     }
   </div>
 }
 
-@if (examining(); as p) {
-  <app-dialog [heading]="p.name + '’s graveyard'" (close)="examiningUid.set(null)">
+@if (examined(); as p) {
+  <app-dialog
+    [heading]="p.name + '’s ' + (examining()!.kind === 'exile' ? 'exile' : 'graveyard')"
+    (close)="examining.set(null)"
+  >
     <div class="examine-grid">
-      @for (c of p.graveyard; track c.id) {
+      @for (c of examinedCards(); track c.id) {
         <figure class="examine-card">
-          <img [src]="c.src" [alt]="c.name" [title]="c.name" />
+          <img [src]="c.src" [alt]="c.name" [title]="c.name" crossorigin="anonymous" />
           @if (isMine()) {
             <button type="button" (click)="toHand(c)">To hand</button>
           }

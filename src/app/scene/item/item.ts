@@ -1,0 +1,328 @@
+import { Component, OnDestroy, effect, inject, input, untracked } from '@angular/core';
+import {
+  BufferGeometry,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  Sprite,
+  SpriteMaterial,
+  Texture,
+} from 'three';
+import { AssetLoaderService } from '../asset-loader.service';
+import { CardInteractions } from '../card/card-interactions';
+import { CardStore } from '../card/card-store';
+import { ITEM_MODEL_URLS } from '../scene-assets';
+import { SceneGraph } from '../scene-graph';
+import {
+  makeCoinGeometry,
+  makeCoinTextures,
+  makeCounterGeometry,
+  makeCounterTexture,
+  makeD6PipTextures,
+  makeDiceGeometry,
+  makeValueTexture,
+  restLift,
+} from './item-geometry';
+import { ItemState, isDice } from './item.types';
+
+/** Slight white tint (emissive) applied while hovered, matching cards. */
+const HOVER_TINT = 0x333333;
+/** Roll animation length — the design doc's 1.5 s lerp across every euler. */
+const ROLL_MS = 1500;
+/** Coin flip: a shorter hop, since it also has to land. */
+const FLIP_MS = 1200;
+/**
+ * Peak of the coin's hop. The design doc says +2, which was written for a
+ * different scale — on this table a card is 0.32 m across, so 0.5 m is the same
+ * gesture: clearly airborne, still on screen under the overhead camera.
+ */
+const FLIP_HOP = 0.5;
+/** Placeholder body colours per kind. */
+const DICE_COLOR = 0xe8e3d6;
+const COIN_EDGE_COLOR = 0xb99442;
+
+/**
+ * A single table item — die, coin or counter — rendering the ItemState it
+ * receives from the Scene's `@for` over ItemStore. Renders no DOM: it builds
+ * (or clones, if a model is registered in ITEM_MODEL_URLS) a body, mounts it
+ * into the SceneGraph, and registers with CardInteractions for raycast picking,
+ * exactly like `Card`.
+ *
+ * The object is three nested nodes: a wrapper at the item's world position, a
+ * pivot lifted so the body rests on the surface (and hops when a coin flips),
+ * and the body itself, which is what a roll rotates. A counter attached to a
+ * card stores its position as an offset and follows that card around the table.
+ */
+@Component({
+  selector: 'app-item',
+  templateUrl: './item.html',
+  standalone: true,
+})
+export class Item implements OnDestroy {
+  readonly state = input.required<ItemState>();
+
+  private readonly assets = inject(AssetLoaderService);
+  private readonly graph = inject(SceneGraph);
+  private readonly interactions = inject(CardInteractions);
+  private readonly cards = inject(CardStore);
+
+  private wrapper?: Group;
+  private pivot?: Group;
+  private body?: Object3D;
+  private label?: Sprite;
+  private lift = 0;
+  /** Everything this instance owns and must dispose (shared caches are never ours). */
+  private readonly materials: MeshStandardMaterial[] = [];
+  private readonly geometries: BufferGeometry[] = [];
+  private readonly textures: Texture[] = [];
+  /** The redrawn counter face / die label, replaced whenever the value changes. */
+  private valueTexture?: Texture;
+  /** Rotation the body is travelling toward, and the animation doing it. */
+  private target: [number, number, number] = [0, 0, 0];
+  private animation: {
+    from: [number, number, number];
+    to: [number, number, number];
+    start: number;
+    duration: number;
+    hop: number;
+  } | null = null;
+  private frameId = 0;
+  private appliedValue?: number;
+  private destroyed = false;
+
+  constructor() {
+    void this.spawn();
+    // Position: world, or an offset from the card a counter is attached to.
+    effect(() => {
+      const { position, attachedTo } = this.state();
+      const anchor = attachedTo ? this.cards.card(attachedTo)?.position : undefined;
+      this.applyPosition(position, anchor);
+    });
+    effect(() => {
+      this.animateTo(this.state().rotation);
+    });
+    effect(() => {
+      const { value, variant, kind } = this.state();
+      if (value !== this.appliedValue) this.applyValue(value, variant, kind);
+    });
+    effect(() => {
+      const hovered = this.interactions.hoveredId() === this.state().id;
+      for (const material of this.materials) {
+        material.emissive.setHex(hovered ? HOVER_TINT : 0x000000);
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    cancelAnimationFrame(this.frameId);
+    this.interactions.unregister(untracked(this.state).id);
+    if (this.wrapper) this.graph.root.remove(this.wrapper);
+    for (const material of this.materials) material.dispose();
+    for (const geometry of this.geometries) geometry.dispose();
+    for (const texture of this.textures) texture.dispose();
+    this.valueTexture?.dispose();
+    if (this.label) (this.label.material as SpriteMaterial | undefined)?.dispose();
+  }
+
+  private async spawn(): Promise<void> {
+    const state = untracked(this.state);
+    this.lift = restLift(state.kind);
+    const wrapper = new Group();
+    const pivot = new Group();
+    pivot.position.y = this.lift;
+    wrapper.add(pivot);
+    this.wrapper = wrapper;
+    this.pivot = pivot;
+
+    this.body = await this.buildBody(state);
+    if (this.destroyed) return;
+    pivot.add(this.body);
+    this.body.rotation.set(...state.rotation);
+    this.target = [...state.rotation];
+
+    if (isDice(state.kind) && state.kind !== 'd6') {
+      // A placeholder polyhedron has no readable faces, so the rolled number
+      // rides above it on a label instead (the d6 shows real pips).
+      this.label = new Sprite();
+      this.label.position.y = this.lift + 0.16;
+      this.label.scale.setScalar(0.14);
+      wrapper.add(this.label);
+    }
+    this.applyValue(state.value, state.variant, state.kind);
+
+    const anchor = state.attachedTo
+      ? untracked(() => this.cards.card(state.attachedTo!)?.position)
+      : undefined;
+    this.applyPosition(state.position, anchor);
+    this.graph.root.add(wrapper);
+    this.interactions.register(state.id, wrapper);
+  }
+
+  /** The registered model for this kind, else the procedural placeholder. */
+  private async buildBody(state: ItemState): Promise<Object3D> {
+    const url = ITEM_MODEL_URLS[state.kind];
+    if (url) {
+      try {
+        const model = (await this.assets.load(url)).clone();
+        this.claimMaterials(model);
+        return model;
+      } catch (err) {
+        console.warn(`[item] Model ${url} unavailable, using the placeholder.`, err);
+      }
+    }
+    return this.buildPlaceholder(state);
+  }
+
+  private buildPlaceholder(state: ItemState): Object3D {
+    if (state.kind === 'coin') {
+      const geometry = makeCoinGeometry();
+      const [heads, tails] = makeCoinTextures();
+      this.geometries.push(geometry);
+      this.textures.push(heads, tails);
+      // CylinderGeometry material order: side, top (+Y = heads), bottom.
+      const materials = [
+        this.own(new MeshStandardMaterial({ color: COIN_EDGE_COLOR, roughness: 0.4 })),
+        this.own(new MeshStandardMaterial({ map: heads, roughness: 0.5 })),
+        this.own(new MeshStandardMaterial({ map: tails, roughness: 0.5 })),
+      ];
+      return new Mesh(geometry, materials);
+    }
+    if (state.kind === 'counter') {
+      const geometry = makeCounterGeometry();
+      this.geometries.push(geometry);
+      const face = this.own(new MeshStandardMaterial({ roughness: 0.6 }));
+      const side = this.own(new MeshStandardMaterial({ color: 0x1b1b24, roughness: 0.8 }));
+      // side, top (the face carrying "+1/+1"), bottom.
+      return new Mesh(geometry, [side, face, side]);
+    }
+    const geometry = makeDiceGeometry(state.kind);
+    this.geometries.push(geometry);
+    if (state.kind === 'd6') {
+      const pips = makeD6PipTextures();
+      this.textures.push(...pips);
+      return new Mesh(
+        geometry,
+        pips.map((map) => this.own(new MeshStandardMaterial({ map, roughness: 0.5 }))),
+      );
+    }
+    return new Mesh(
+      geometry,
+      this.own(new MeshStandardMaterial({ color: DICE_COLOR, roughness: 0.5, flatShading: true })),
+    );
+  }
+
+  /** Track a material as ours (hover tints it, destroy disposes it). */
+  private own(material: MeshStandardMaterial): MeshStandardMaterial {
+    this.materials.push(material);
+    return material;
+  }
+
+  /** Give a loaded model per-instance materials, like Card does. */
+  private claimMaterials(node: Object3D): void {
+    node.traverse((obj) => {
+      if (!(obj instanceof Mesh)) return;
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const owned = materials.map((m) => this.own((m as MeshStandardMaterial).clone()));
+      obj.material = Array.isArray(obj.material) ? owned : owned[0]!;
+    });
+  }
+
+  private applyPosition(
+    position: [number, number, number],
+    anchor: [number, number, number] | undefined,
+  ): void {
+    if (!this.wrapper) return;
+    if (anchor) {
+      this.wrapper.position.set(
+        anchor[0] + position[0],
+        anchor[1] + position[1],
+        anchor[2] + position[2],
+      );
+    } else {
+      this.wrapper.position.set(...position);
+    }
+  }
+
+  /** Start (or skip) the tumble toward a new rotation. */
+  private animateTo(rotation: [number, number, number]): void {
+    if (!this.body) return;
+    if (
+      rotation[0] === this.target[0] &&
+      rotation[1] === this.target[1] &&
+      rotation[2] === this.target[2]
+    ) {
+      return; // unchanged — a position or value write, not a roll
+    }
+    const from: [number, number, number] = [
+      this.body.rotation.x,
+      this.body.rotation.y,
+      this.body.rotation.z,
+    ];
+    this.target = [...rotation];
+    this.animation = {
+      from,
+      to: [...rotation],
+      start: performance.now(),
+      duration: untracked(this.state).kind === 'coin' ? FLIP_MS : ROLL_MS,
+      hop: untracked(this.state).kind === 'coin' ? FLIP_HOP : 0,
+    };
+    cancelAnimationFrame(this.frameId);
+    this.frameId = requestAnimationFrame(this.tick);
+  }
+
+  /** Lerp every euler toward the target (no physics — see additionalitems.md). */
+  private readonly tick = (now: number): void => {
+    const animation = this.animation;
+    if (!animation || !this.body || !this.pivot) return;
+    const t = Math.min(1, (now - animation.start) / animation.duration);
+    this.body.rotation.set(
+      animation.from[0] + (animation.to[0] - animation.from[0]) * t,
+      animation.from[1] + (animation.to[1] - animation.from[1]) * t,
+      animation.from[2] + (animation.to[2] - animation.from[2]) * t,
+    );
+    // A coin arcs up and back down over the same span.
+    this.pivot.position.y = this.lift + animation.hop * Math.sin(Math.PI * t);
+    if (t < 1) {
+      this.frameId = requestAnimationFrame(this.tick);
+      return;
+    }
+    this.animation = null;
+    this.pivot.position.y = this.lift;
+  };
+
+  /**
+   * Repaint whatever shows the item's value: a counter's face, or the label
+   * floating over a polyhedral die. The previous drawing is disposed as it is
+   * replaced, so clicking a counter repeatedly never piles up textures.
+   */
+  private applyValue(value: number, variant: ItemState['variant'], kind: ItemState['kind']): void {
+    this.appliedValue = value;
+    if (kind === 'counter') {
+      const material = this.counterFaceMaterial();
+      if (!material) return;
+      this.valueTexture?.dispose();
+      this.valueTexture = makeCounterTexture(value, variant);
+      material.map = this.valueTexture;
+      material.needsUpdate = true;
+      return;
+    }
+    if (!this.label) return;
+    this.valueTexture?.dispose();
+    this.valueTexture = makeValueTexture(value);
+    (this.label.material as SpriteMaterial | undefined)?.dispose();
+    this.label.material = new SpriteMaterial({
+      map: this.valueTexture,
+      depthTest: false,
+      transparent: true,
+    });
+  }
+
+  /** The counter's top-cap material (index 1 of the cylinder material list). */
+  private counterFaceMaterial(): MeshStandardMaterial | undefined {
+    const mesh = this.body;
+    if (!(mesh instanceof Mesh) || !Array.isArray(mesh.material)) return undefined;
+    return mesh.material[1] as MeshStandardMaterial | undefined;
+  }
+}

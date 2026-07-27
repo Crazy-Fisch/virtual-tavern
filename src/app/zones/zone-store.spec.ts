@@ -38,10 +38,17 @@ describe('ZoneStore', () => {
     expect(store.hasMine()).toBe(false);
     store.loadDeck([card('a', 'A'), card('b', 'B'), card('c', 'C')]);
     expect(store.hasMine()).toBe(true);
-    expect(store.mine()).toMatchObject({ uid: 'user-1', name: 'Tim', hand: [], graveyard: [] });
+    expect(store.mine()).toMatchObject({
+      uid: 'user-1',
+      name: 'Tim',
+      hand: [],
+      graveyard: [],
+      exile: [],
+    });
     expect([...store.mine().deck.map((c) => c.id)].sort()).toEqual(['a', 'b', 'c']);
     expect(Object.keys(room.worldState()).sort()).toEqual([
       'zone:user-1:deck',
+      'zone:user-1:exile',
       'zone:user-1:graveyard',
       'zone:user-1:hand',
     ]);

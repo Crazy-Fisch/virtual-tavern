@@ -17,10 +17,13 @@ import { CardStore } from '../scene/card/card-store';
 import { newCardId } from '../scene/card/card.types';
 import { Dialog } from '../shared/dialog/dialog';
 import { ZoneStore } from './zone-store';
-import { PlayerZones, ZoneCard, ZoneKind } from './zone.types';
+import { OpenZoneKind, PlayerZones, ZONE_KINDS, ZoneCard, ZoneKind } from './zone.types';
 
-/** Screen anchor of the small right-click menu on my deck/graveyard piles. */
-type ZoneMenu = { kind: 'deck' | 'graveyard'; x: number; y: number };
+/** Screen anchor of the small right-click menu on my deck/graveyard/exile piles. */
+type ZoneMenu = { kind: Exclude<ZoneKind, 'hand'>; x: number; y: number };
+
+/** Which zone is open in the examine dialog. */
+type Examining = { uid: string; kind: OpenZoneKind };
 
 /** Fan geometry: per-card tilt shrinks as the hand grows, capped for small hands. */
 const MAX_FAN_STEP_DEG = 6;
@@ -32,19 +35,27 @@ const HAND_DRAG_THRESHOLD_PX = 4;
 /** Breathing room kept beside a scrolled hand so its end cards stay reachable. */
 const HAND_SCROLL_MARGIN_PX = 48;
 
+/** CSS class of each zone's widget, for hit-testing a card dropped onto it. */
+const ZONE_SELECTORS: Readonly<Record<ZoneKind, string>> = {
+  hand: '.hand',
+  deck: '.pile.deck',
+  graveyard: '.pile.grave',
+  exile: '.pile.exile',
+};
+
 /**
  * The DOM-side zone UI over the scene (plain Angular/HTML, not Three): my hand
  * fanned at the bottom like holding real cards (drag a card onto the table to
  * play it, like a real card — releasing it off the table puts it back in the
- * hand), my deck and graveyard piles with right-click actions
+ * hand), my deck, graveyard and exile piles with click/right-click actions
  * (draw/shuffle/examine), and a summary of every other player's zone sizes
- * with examinable graveyards. Rendered inside the Scene component so it can
- * reach the Scene-provided CardStore/CardInteractions when playing a card.
+ * with examinable graveyards and exile. Rendered inside the Scene component so
+ * it can reach the Scene-provided CardStore/CardInteractions when playing a card.
  *
- * Until a player joins the game their zone UI is hidden; a bottom-right
- * "Choose Deck" button opens the picker (decks imported on the Decks screen).
- * Choosing one resolves every entry against the card database, creates the
- * zones with the shuffled deck, and prefetches the card images.
+ * Until a player joins the game their zone UI is hidden; a centred "Choose
+ * Deck" button opens the picker (decks imported on the Decks screen). Picking
+ * one only *selects* it — the player then confirms (or picks another), and
+ * confirming is what creates the zones and starts warming the card images.
  */
 @Component({
   selector: 'app-zones',
@@ -70,10 +81,12 @@ export class Zones implements OnDestroy {
   private pendingDrag: { card: ZoneCard; x: number; y: number } | null = null;
 
   protected readonly menu = signal<ZoneMenu | null>(null);
-  /** Uid of the player whose graveyard is being examined, or null. */
-  protected readonly examiningUid = signal<string | null>(null);
+  /** The zone being examined (mine or another player's), or null. */
+  protected readonly examining = signal<Examining | null>(null);
   /** Whether the "Choose Deck" picker dialog is open. */
   protected readonly choosingDeck = signal(false);
+  /** Deck picked but not yet confirmed — nothing is loaded until it is. */
+  protected readonly pendingDeck = signal<Deck | null>(null);
   /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
   protected readonly handScroll = signal(0);
 
@@ -82,19 +95,25 @@ export class Zones implements OnDestroy {
    * Hit-tested via elementFromPoint so it works regardless of which zone
    * widgets are currently rendered; only active once I've joined the game.
    */
-  private readonly dropTargets: CardDropTarget[] = (['deck', 'graveyard', 'hand'] as const).map(
-    (kind) => ({
-      hitTest: (x, y) => this.overZone(x, y, kind),
-      accept: (card) => this.zones.takeFromTable(card, kind),
-    }),
-  );
+  private readonly dropTargets: CardDropTarget[] = ZONE_KINDS.map((kind) => ({
+    hitTest: (x, y) => this.overZone(x, y, kind),
+    accept: (card) => this.zones.takeFromTable(card, kind),
+  }));
 
-  protected readonly examining = computed<PlayerZones | null>(() => {
-    const uid = this.examiningUid();
-    return uid ? (this.zones.all().find((p) => p.uid === uid) ?? null) : null;
+  /** The player whose zone the examine dialog shows. */
+  protected readonly examined = computed<PlayerZones | null>(() => {
+    const open = this.examining();
+    return open ? (this.zones.all().find((p) => p.uid === open.uid) ?? null) : null;
   });
 
-  protected readonly isMine = computed(() => this.examiningUid() === this.zones.mine().uid);
+  /** Cards listed by the examine dialog (graveyard or exile). */
+  protected readonly examinedCards = computed<ZoneCard[]>(() => {
+    const open = this.examining();
+    const player = this.examined();
+    return open && player ? player[open.kind] : [];
+  });
+
+  protected readonly isMine = computed(() => this.examining()?.uid === this.zones.mine().uid);
 
   constructor() {
     // A rejoin refreshes my display name on zones I already have; a fresh
@@ -105,24 +124,39 @@ export class Zones implements OnDestroy {
     for (const target of this.dropTargets) this.interactions.registerDropTarget(target);
   }
 
+  ngOnDestroy(): void {
+    this.clearPendingDrag();
+    for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
+  }
+
+  /** Pick a deck: shown for confirmation, but nothing is loaded yet. */
+  protected pickDeck(deck: Deck): void {
+    this.pendingDeck.set(deck);
+    this.choosingDeck.set(false);
+  }
+
   /**
-   * Join the game with a deck: resolve every decklist entry against the card
-   * database (image + canonical name), create my zones with the shuffled
-   * deck, and start warming the image caches for every card in it.
+   * Join the game with the picked deck: resolve every decklist entry against
+   * the card database (image + canonical name), create my zones with the
+   * shuffled deck, and only now start warming the image caches — a deck that
+   * was merely looked at never costs a download (polishpart2.md).
    */
-  protected chooseDeck(deck: Deck): void {
+  protected confirmDeck(): void {
+    const deck = this.pendingDeck();
+    if (!deck) return;
     const cards = deck.list.flatMap((entry) => {
       const record = this.db.lookup(entry.card);
-      return Array.from({ length: entry.count }, (): ZoneCard => {
-        return {
+      return Array.from(
+        { length: entry.count },
+        (): ZoneCard => ({
           id: crypto.randomUUID(),
           name: record?.name ?? entry.card,
           src: record?.src ?? '',
-        };
-      });
+        }),
+      );
     });
     this.zones.loadDeck(cards);
-    this.choosingDeck.set(false);
+    this.pendingDeck.set(null);
     const srcs = new Set(cards.map((c) => c.src));
     srcs.delete('');
     for (const src of srcs) void this.assets.loadTexture(src).catch(() => undefined);
@@ -132,11 +166,6 @@ export class Zones implements OnDestroy {
   protected fan(index: number, total: number): string {
     const step = Math.min(MAX_FAN_STEP_DEG, FAN_SPREAD_DEG / Math.max(total, 1));
     return `rotate(${(index - (total - 1) / 2) * step}deg)`;
-  }
-
-  ngOnDestroy(): void {
-    this.clearPendingDrag();
-    for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
   }
 
   /** CSS transform positioning the fanned hand, including any scroll shift. */
@@ -164,10 +193,8 @@ export class Zones implements OnDestroy {
   /** True when the screen point sits over one of my zone widgets. */
   private overZone(x: number, y: number, kind: ZoneKind): boolean {
     if (!this.zones.hasMine()) return false;
-    const selector =
-      kind === 'deck' ? '.pile.deck' : kind === 'graveyard' ? '.pile.grave' : '.hand';
     const el = document.elementFromPoint(x, y);
-    return el instanceof Element && !!el.closest(selector);
+    return el instanceof Element && !!el.closest(ZONE_SELECTORS[kind]);
   }
 
   /**
@@ -236,7 +263,7 @@ export class Zones implements OnDestroy {
     });
   }
 
-  protected openMenu(event: MouseEvent, kind: 'deck' | 'graveyard'): void {
+  protected openMenu(event: MouseEvent, kind: Exclude<ZoneKind, 'hand'>): void {
     event.preventDefault();
     event.stopPropagation();
     const host = (event.currentTarget as HTMLElement).closest('app-zones')!;
@@ -254,13 +281,14 @@ export class Zones implements OnDestroy {
     this.zones.shuffle();
   }
 
-  protected examine(uid: string): void {
+  protected examine(uid: string, kind: OpenZoneKind): void {
     this.menu.set(null);
-    this.examiningUid.set(uid);
+    this.examining.set({ uid, kind });
   }
 
   protected toHand(card: ZoneCard): void {
-    this.zones.takeToHand('graveyard', card.id);
+    const open = this.examining();
+    if (open) this.zones.takeToHand(open.kind, card.id);
   }
 
   /** Close the pile menu when clicking anywhere outside it. */

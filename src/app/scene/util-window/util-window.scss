@@ -52,6 +52,58 @@
   }
 }
 
+// ---------- game items (dice / coin / counters) ----------
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  .group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: #eee;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .chevron {
+      color: #9c8cff;
+    }
+  }
+
+  .sub {
+    display: flex;
+    gap: 4px;
+    padding: 0 8px 4px;
+
+    button {
+      flex: 1;
+      padding: 4px 0;
+      border: none;
+      border-radius: 4px;
+      background: #35355a;
+      color: #ddd;
+      font: inherit;
+      font-size: 0.78rem;
+      cursor: pointer;
+
+      &:hover {
+        background: #6c4cff;
+        color: #fff;
+      }
+    }
+  }
+}
+
 // 3 columns; sized so 2 rows (6 cards) are visible, then it scrolls.
 .results {
   display: grid;

@@ -5,6 +5,15 @@ import { CardInteractions, UtilAnchor } from '../card/card-interactions';
 import { CardHit, CardSearchService } from '../card/card-search.service';
 import { CardStore } from '../card/card-store';
 import { newCardId } from '../card/card.types';
+import { ItemStore } from '../item/item-store';
+import {
+  CounterVariant,
+  DICE_KINDS,
+  DiceKind,
+  ItemKind,
+  itemLabel,
+  newItem,
+} from '../item/item.types';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY = 2;
@@ -17,9 +26,10 @@ function jitter(): number {
 /**
  * The "add to game" popup (plain Angular/HTML over the canvas), opened by
  * right-clicking empty table (CardInteractions owns the open/close state and
- * the world position where added objects appear): card search (Scryfall) with
- * a scrollable 3-wide result grid — each hit can go to the table, my hand, or
- * on top of my deck.
+ * the world position where added objects appear): the game items — dice
+ * (d4/d6/d12/d20), a coin, and +1/+1 or −1/−1 counters, each behind its own
+ * expanding row — above a card search (Scryfall) with a scrollable 3-wide
+ * result grid, where each hit can go to the table, my hand, or on top of my deck.
  */
 @Component({
   selector: 'app-util-window',
@@ -31,9 +41,13 @@ export class UtilWindow {
   protected readonly interactions = inject(CardInteractions);
   private readonly searchService = inject(CardSearchService);
   private readonly cards = inject(CardStore);
+  private readonly items = inject(ItemStore);
   private readonly zones = inject(ZoneStore);
   private readonly room = inject(RoomService);
 
+  protected readonly diceKinds = DICE_KINDS;
+  /** Which item row is expanded ('dice' / 'counters'), or null. */
+  protected readonly openGroup = signal<'dice' | 'counters' | null>(null);
   protected readonly query = signal('');
   protected readonly results = signal<CardHit[]>([]);
   protected readonly searching = signal(false);
@@ -98,6 +112,33 @@ export class UtilWindow {
 
   protected close(): void {
     this.interactions.utilWindow.set(null);
+  }
+
+  protected toggleGroup(group: 'dice' | 'counters'): void {
+    this.openGroup.update((open) => (open === group ? null : group));
+  }
+
+  protected addDie(kind: DiceKind): void {
+    this.addItem(kind);
+  }
+
+  protected addCoin(): void {
+    this.addItem('coin');
+  }
+
+  protected addCounter(variant: CounterVariant): void {
+    this.addItem('counter', variant);
+  }
+
+  /** Spawn a game item where the table was right-clicked, and close the window. */
+  private addItem(kind: ItemKind, variant: CounterVariant = 'plus'): void {
+    const anchor = this.interactions.utilWindow();
+    if (!anchor) return;
+    const [x, y, z] = anchor.world;
+    const item = newItem(kind, [x + jitter(), y, z + jitter()], variant);
+    this.items.add(item);
+    this.room.sendAction(`added a ${itemLabel(item)}`);
+    this.close();
   }
 
   protected addToTable(hit: CardHit): void {

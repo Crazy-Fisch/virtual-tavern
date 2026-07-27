@@ -5,6 +5,31 @@
       <button type="button" class="x" aria-label="Close" (click)="close()">×</button>
     </header>
 
+    <!-- Game items: dice and counters open a second row of choices, the coin
+         drops straight onto the table. -->
+    <div class="items">
+      <button type="button" class="group" (click)="toggleGroup('dice')">
+        Dice <span class="chevron">{{ openGroup() === 'dice' ? '▾' : '▸' }}</span>
+      </button>
+      @if (openGroup() === 'dice') {
+        <div class="sub">
+          @for (kind of diceKinds; track kind) {
+            <button type="button" (click)="addDie(kind)">{{ kind }}</button>
+          }
+        </div>
+      }
+      <button type="button" class="group" (click)="addCoin()">Coin</button>
+      <button type="button" class="group" (click)="toggleGroup('counters')">
+        Counters <span class="chevron">{{ openGroup() === 'counters' ? '▾' : '▸' }}</span>
+      </button>
+      @if (openGroup() === 'counters') {
+        <div class="sub">
+          <button type="button" (click)="addCounter('plus')">+1/+1</button>
+          <button type="button" (click)="addCounter('minus')">−1/−1</button>
+        </div>
+      }
+    </div>
+
     <input
       #search
       type="search"
@@ -23,7 +48,7 @@
       } @else {
         @for (hit of results(); track hit.src) {
           <figure class="hit">
-            <img [src]="hit.src" [alt]="hit.name" [title]="hit.name" />
+            <img [src]="hit.src" [alt]="hit.name" [title]="hit.name" crossorigin="anonymous" />
             <div class="actions">
               <button type="button" title="Add to the table" (click)="addToTable(hit)">
                 Table

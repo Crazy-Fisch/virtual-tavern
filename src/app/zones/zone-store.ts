@@ -14,8 +14,16 @@ function parseCards(value: unknown): ZoneCard[] {
 }
 
 function emptyZones(uid: string, name: string): PlayerZones {
-  return { uid, name, hand: [], deck: [], graveyard: [] };
+  return { uid, name, hand: [], deck: [], graveyard: [], exile: [] };
 }
+
+/** History line for a card leaving the table for each zone. */
+const TAKE_ACTIONS: Readonly<Record<ZoneKind, (name: string) => string>> = {
+  hand: (name) => `returned ${name} to their hand`,
+  deck: (name) => `put ${name} on top of their deck`,
+  graveyard: (name) => `put ${name} into their graveyard`,
+  exile: (name) => `exiled ${name}`,
+};
 
 /** Fisher–Yates copy. */
 function shuffled(cards: ZoneCard[]): ZoneCard[] {
@@ -82,6 +90,7 @@ export class ZoneStore {
     if (!this.room.userId()) return;
     this.write('hand', []);
     this.write('graveyard', []);
+    this.write('exile', []);
     this.write('deck', shuffled(cards));
     this.room.sendAction(`joined the game with a ${cards.length}-card deck`);
   }
@@ -120,13 +129,7 @@ export class ZoneStore {
   takeFromTable(card: CardState, kind: ZoneKind): void {
     this.room.removeWorldObject(card.id);
     this.addCard(kind, { id: crypto.randomUUID(), name: card.name, src: card.src });
-    this.room.sendAction(
-      kind === 'hand'
-        ? `returned ${card.name} to their hand`
-        : kind === 'deck'
-          ? `put ${card.name} on top of their deck`
-          : `put ${card.name} into their graveyard`,
-    );
+    this.room.sendAction(TAKE_ACTIONS[kind](card.name));
   }
 
   /** Add a card to one of my zones (deck = on top). Used by the util window; logging is the caller's. */

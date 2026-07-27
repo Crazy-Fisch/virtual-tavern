@@ -1,27 +1,68 @@
+<!-- Selection rectangle being dragged over the table. -->
+@if (interactions.marquee(); as m) {
+  <div
+    class="marquee"
+    [style.left.px]="m.x"
+    [style.top.px]="m.y"
+    [style.width.px]="m.width"
+    [style.height.px]="m.height"
+  ></div>
+}
+
 @if (cardMenu(); as m) {
   <div class="context-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+    @if (m.group > 1) {
+      <p class="group-note">{{ m.group }} cards selected</p>
+    }
     <button type="button" (click)="act(m.card.id, 'view')">View</button>
+    <button type="button" (click)="act(m.card.id, 'tap')">
+      {{ m.card.tapped ? 'Untap' : 'Tap' }}{{ groupSuffix(m.group) }}
+    </button>
     <button type="button" (click)="act(m.card.id, 'rotate')">Rotate</button>
     <button type="button" (click)="act(m.card.id, 'flip')">
       {{ m.card.faceUp ? 'Flip face down' : 'Flip face up' }}
     </button>
-    <button type="button" (click)="act(m.card.id, 'related')">Related…</button>
+    <button type="button" (click)="act(m.card.id, 'related')">
+      Related…{{ groupSuffix(m.group) }}
+    </button>
     <button type="button" (click)="act(m.card.id, 'toHand')">To hand</button>
     <button type="button" (click)="act(m.card.id, 'toDeck')">To deck (top)</button>
     <button type="button" (click)="act(m.card.id, 'toGrave')">To graveyard</button>
-    <button type="button" class="danger" (click)="act(m.card.id, 'delete')">Delete</button>
+    <button type="button" (click)="act(m.card.id, 'toExile')">To exile</button>
+    <button type="button" class="danger" (click)="act(m.card.id, 'delete')">
+      Delete{{ groupSuffix(m.group) }}
+    </button>
+  </div>
+}
+
+<!-- Dice and coins: roll/flip plus delete. Counters have no menu — they count
+     down on right-click and are removed with the delete hotkey. -->
+@if (itemMenu(); as m) {
+  <div class="context-menu" [style.left.px]="m.x" [style.top.px]="m.y">
+    @if (m.rollable) {
+      <button type="button" (click)="itemAct(m.item.id, 'roll')">Roll</button>
+    } @else {
+      <button type="button" (click)="itemAct(m.item.id, 'flip')">Flip</button>
+    }
+    <button type="button" class="danger" (click)="itemAct(m.item.id, 'delete')">Delete</button>
   </div>
 }
 
 @if (related(); as r) {
   <div class="related-panel" [style.left.px]="r.x" [style.top.px]="r.y">
     <header>
-      <span>Related cards</span>
+      <span>Related cards{{ r.owners > 1 ? ' (' + r.owners + ')' : '' }}</span>
       <button type="button" class="x" aria-label="Close" (click)="closeRelated()">×</button>
     </header>
     <div class="thumbs">
       @for (card of r.cards; track card.id) {
-        <img [src]="card.src" [alt]="card.name" [title]="card.name" (click)="view(card.id)" />
+        <img
+          [src]="card.src"
+          [alt]="card.name"
+          [title]="card.name"
+          crossorigin="anonymous"
+          (click)="view(card.id)"
+        />
       } @empty {
         <p class="empty">No related cards.</p>
       }
@@ -31,6 +72,6 @@
 
 @if (viewCard(); as card) {
   <app-dialog [heading]="card.name" [fit]="true" (close)="closeView()">
-    <img class="view-img" [src]="card.src" [alt]="card.name" />
+    <img class="view-img" [src]="card.src" [alt]="card.name" crossorigin="anonymous" />
   </app-dialog>
 }

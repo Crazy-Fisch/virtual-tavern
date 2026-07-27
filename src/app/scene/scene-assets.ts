@@ -26,3 +26,14 @@ export const ENVIRONMENT_ASSETS: readonly EnvironmentAsset[] = [{ url: 'models/T
  * face (material name matching /front|artwork/i) with a per-card image.
  */
 export const CARD_MODEL_URL = 'models/Card.glb';
+
+/**
+ * Optional authored models for table items (dice, coins, counters), instanced
+ * by the `Item` component. A kind with no entry here renders the procedural
+ * placeholder from `item/item-geometry.ts` — which is every kind today, so no
+ * missing-file requests are ever made. Drop e.g. `models/D20.glb` into
+ * `public/models/` and add `d20: 'models/D20.glb'`: the item then spawns that
+ * model instead, keeping its pose, animation and picking behaviour. Author it
+ * centred on its own origin, sized in metres (a card is 0.32 × 0.44 m).
+ */
+export const ITEM_MODEL_URLS: Readonly<Partial<Record<string, string>>> = {};

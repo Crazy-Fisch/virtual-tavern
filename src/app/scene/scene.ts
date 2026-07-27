@@ -16,6 +16,8 @@ import { Card } from './card/card';
 import { CardInteractions } from './card/card-interactions';
 import { CardOverlay } from './card/card-overlay/card-overlay';
 import { CardStore } from './card/card-store';
+import { Item } from './item/item';
+import { ItemStore } from './item/item-store';
 import { ENVIRONMENT_ASSETS } from './scene-assets';
 import { SceneCamera } from './scene-camera';
 import { SceneGraph } from './scene-graph';
@@ -28,7 +30,7 @@ import { UtilWindow } from './util-window/util-window';
  * add-to-game util window are DOM overlays rendered on top of the canvas. */
 @Component({
   selector: 'app-scene',
-  imports: [Card, CardOverlay, CameraRig, UtilWindow, Zones],
+  imports: [Card, CardOverlay, CameraRig, Item, UtilWindow, Zones],
   templateUrl: './scene.html',
   styleUrl: './scene.scss',
   standalone: true,
@@ -38,8 +40,10 @@ export class Scene implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   protected readonly assets = inject(AssetLoaderService);
   protected readonly cards = inject(CardStore).cards;
+  protected readonly items = inject(ItemStore).items;
   private readonly graph = inject(SceneGraph);
-  private readonly camera = inject(SceneCamera).camera;
+  private readonly sceneCamera = inject(SceneCamera);
+  private readonly camera = this.sceneCamera.camera;
   private readonly interactions = inject(CardInteractions);
 
   private renderer?: WebGLRenderer;
@@ -115,7 +119,8 @@ export class Scene implements AfterViewInit, OnDestroy {
     const width = canvas.clientWidth || 1;
     const height = canvas.clientHeight || 1;
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    // Orthographic: the vertical world extent is fixed, so a wider viewport
+    // reveals more table instead of scaling the cards down.
+    this.sceneCamera.setAspect(width / height);
   }
 }

@@ -31,10 +31,19 @@ export interface CardState {
 /** Actions offered by the card context menu and hotkeys. */
 export type CardAction =
   | 'view'
+  | 'tap'
   | 'rotate'
   | 'flip'
   | 'related'
   | 'toHand'
   | 'toDeck'
   | 'toGrave'
+  | 'toExile'
   | 'delete';
+
+/**
+ * Actions that apply to a whole selection when the clicked card is part of one
+ * (cardselection.md). Everything else drops the selection and acts on the one
+ * card that was clicked.
+ */
+export const GROUP_ACTIONS: readonly CardAction[] = ['tap', 'related', 'delete'];

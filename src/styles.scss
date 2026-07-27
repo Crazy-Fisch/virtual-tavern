@@ -7,3 +7,18 @@ body {
   margin: 0;
   overflow: hidden;
 }
+
+/*
+ * In-game UI unit (polishpart2.md "ui sizes"). The layout is designed at 16:9,
+ * so `--u` is 1% of the width of the *largest 16:9 box that fits the viewport*:
+ * on a 16:9 screen that is 1vw, on anything wider (UWQHD's 21:9, ultrawides)
+ * the height caps it, so widgets keep their designed size relative to the
+ * table instead of stretching with the extra width. Everything sized in `--u`
+ * therefore scales with the window and stays proportional at any aspect.
+ * At 1920×1080 → 19.2px; at 3440×1440 → 25.6px.
+ */
+:root {
+  --u: min(1vw, 1.7778vh);
+  /* Breathing room between the game UI and the screen edge. */
+  --ui-gap: calc(1.6 * var(--u));
+}

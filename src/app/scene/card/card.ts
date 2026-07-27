@@ -10,11 +10,12 @@ const HALF_PI = Math.PI / 2;
 /** Slight white tint (emissive) applied to every card material while hovered. */
 const HOVER_TINT = 0x333333;
 /**
- * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.4 brings a card
- * down to 0.25 × 0.36 m — a little larger than true proportion, chosen for
- * readability on the (oversized, 4 × 6 m) table under the fixed overhead camera.
+ * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.5 brings a card
+ * down to 0.32 × 0.44 m — well above true proportion, chosen for readability on
+ * the (oversized, 4 × 6 m) table under the fixed orthographic camera, where it
+ * works out to roughly 82 × 114 CSS px on a 1080p screen.
  */
-const CARD_SCALE = 0.4;
+const CARD_SCALE = 0.5;
 
 /**
  * A single playing card in the 3D scene, rendering the CardState it receives
@@ -54,17 +55,20 @@ export class Card implements OnDestroy {
       const { position, yaw, faceUp, tapped } = this.state();
       this.applyPose(position, yaw, faceUp, tapped);
     });
+    // Selected cards wear the hover highlight too, so a marquee selection reads
+    // at a glance (cardselection.md).
     effect(() => {
-      const hovered = this.interactions.hoveredId() === this.state().id;
-      this.applyHover(hovered);
+      const id = this.state().id;
+      this.applyHover(this.interactions.hoveredId() === id || this.interactions.isSelected(id));
     });
-    // While this card is the one being dragged, hide its 3D instance: a DOM
-    // "ghost" (rendered by the zone overlay) follows the cursor on top of
-    // everything instead, so the dragged card never disappears behind the hand
-    // or pile UI. Local-only — remote players never receive the drag preview.
+    // While a DOM "ghost" stands in for this card (a lone card being dragged),
+    // hide its 3D instance: the ghost follows the cursor on top of everything,
+    // so the dragged card never disappears behind the hand or pile UI. A whole
+    // selection being dragged has no ghost and stays visible in the scene.
+    // Local-only — remote players never receive the drag preview.
     effect(() => {
-      const dragging = this.interactions.draggingId() === this.state().id;
-      if (this.instance) this.instance.visible = !dragging;
+      const ghosted = this.interactions.dragGhost()?.id === this.state().id;
+      if (this.instance) this.instance.visible = !ghosted;
     });
   }
 
@@ -97,7 +101,7 @@ export class Card implements OnDestroy {
       const state = untracked(this.state);
       // A card spawned already mid-drag (played from the hand) shows as the DOM
       // ghost, not here, until the drop lands.
-      wrapper.visible = untracked(this.interactions.draggingId) !== state.id;
+      wrapper.visible = untracked(this.interactions.dragGhost)?.id !== state.id;
       this.applyPose(state.position, state.yaw, state.faceUp, state.tapped);
       this.graph.root.add(wrapper);
       this.interactions.register(state.id, wrapper);

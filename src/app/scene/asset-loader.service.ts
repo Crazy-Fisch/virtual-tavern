@@ -2,6 +2,14 @@ import { Injectable, computed, signal } from '@angular/core';
 import { Group, Material, Mesh, Object3D, SRGBColorSpace, Texture, TextureLoader } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+/** Card art conventions: sRGB, and glTF-authored UVs (image kept top-down). */
+function configureCardTexture(texture: Texture): Texture {
+  texture.colorSpace = SRGBColorSpace;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /**
  * GLB loader with caching and aggregate progress signals. Loaded scenes are
  * cached for the app's lifetime (rejoining a room re-adds the same Group
@@ -50,25 +58,58 @@ export class AssetLoaderService {
   loadTexture(url: string): Promise<Texture> {
     const cached = this.textureCache.get(url);
     if (cached) return cached;
-    const promise = new Promise<Texture>((resolve, reject) => {
-      this.textureLoader ??= new TextureLoader();
-      this.textureLoader.load(
-        url,
-        (texture) => {
-          texture.colorSpace = SRGBColorSpace;
-          texture.flipY = false;
-          texture.needsUpdate = true;
-          resolve(texture);
-        },
-        undefined,
-        (err) => {
-          this.textureCache.delete(url); // allow retry
-          reject(err instanceof Error ? err : new Error(`Failed to load texture ${url}`));
-        },
-      );
+    const promise = this.loadTextureFresh(url).catch((err: unknown) => {
+      this.textureCache.delete(url); // allow retry
+      throw err instanceof Error ? err : new Error(`Failed to load texture ${url}`);
     });
     this.textureCache.set(url, promise);
     return promise;
+  }
+
+  /**
+   * Load through an <img> first (cheapest, browser-decoded), falling back to
+   * fetching the bytes ourselves.
+   *
+   * The fallback matters: card art is also shown in the DOM (hand, piles,
+   * search results, deck view). If one of those <img>s pulled it in *without*
+   * `crossorigin`, the browser can hand this cross-origin request the same
+   * opaque cache entry and the upload to WebGL fails — cards with images
+   * everywhere except on the table. Every card <img> now sets
+   * `crossorigin="anonymous"` so both paths share one CORS-clean entry; this
+   * re-fetch heals whatever slipped through (or was cached before the fix).
+   */
+  private async loadTextureFresh(url: string): Promise<Texture> {
+    try {
+      return await this.loadTextureViaImage(url);
+    } catch {
+      return await this.loadTextureFromBytes(url);
+    }
+  }
+
+  private loadTextureViaImage(url: string): Promise<Texture> {
+    return new Promise<Texture>((resolve, reject) => {
+      this.textureLoader ??= new TextureLoader();
+      // Explicit (and matching the <img crossorigin="anonymous">) so the
+      // response is usable as a WebGL texture instead of tainting the canvas.
+      this.textureLoader.setCrossOrigin('anonymous');
+      this.textureLoader.load(
+        url,
+        (texture) => resolve(configureCardTexture(texture)),
+        undefined,
+        (err) => reject(err instanceof Error ? err : new Error(`Failed to load texture ${url}`)),
+      );
+    });
+  }
+
+  /** CORS re-fetch: build the texture from the bytes, skipping the HTTP cache. */
+  private async loadTextureFromBytes(url: string): Promise<Texture> {
+    const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'reload' });
+    if (!response.ok) throw new Error(`Failed to load texture ${url} (${response.status})`);
+    const blob = await response.blob();
+    // ImageBitmap ignores Texture.flipY, but its default orientation already
+    // matches flipY = false (top-left origin), which is what glTF UVs expect.
+    const bitmap = await createImageBitmap(blob);
+    return configureCardTexture(new Texture(bitmap));
   }
 
   /** Dispose geometries, materials, and their textures. NOT for cached environment Groups. */

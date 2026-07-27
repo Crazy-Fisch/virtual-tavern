@@ -42,7 +42,8 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   deduped by id, rollback on insert error); messages have a `kind` — `'chat'` (typed, rendered
   colored) or `'action'` (game-history line posted via `sendAction()`, rendered plain white as
   `<name>: <action>`). World objects carry a **jsonb `data` payload** keyed by an id whose
-  prefix names the owning domain (`card:` CardStore, `zone:` ZoneStore; unknown prefixes such
+  prefix names the owning domain (`card:` CardStore, `item:` ItemStore, `zone:` ZoneStore;
+  unknown prefixes such
   as `token:` rows from removed features are ignored); `setWorldObject(id, data)` upserts
   optimistically (a DB trigger stamps the authoritative `updated_at` used for
   last-writer-wins; own echoes are adopted unconditionally to heal client clock skew) and
@@ -78,10 +79,13 @@ directly as a payload. Room/chat/world shapes live in `src/app/room/room.types.t
 
 `src/app/scene/scene.ts` (`Scene` component) owns the WebGLRenderer and render loop. The
 camera lives in `SceneCamera` (`src/app/scene/scene-camera.ts`, provided by Scene like
-`SceneGraph`) and is driven by the `CameraRig` component
-(`src/app/scene/camera-rig/camera-rig.ts`): a fixed near-bird's-eye base pose (~20° off
-vertical, `CAMERA_POS`/`CAMERA_TARGET` in camera-rig.ts — pulled in to ~4.2 m for larger,
-clearer cards) looking down on the table from the player's table end — mirrored to the
+`SceneGraph`) and is **orthographic** — the design docs' "isometric" view: every card is
+drawn the same size wherever it lies. `SceneCamera.setAspect()` (called by `Scene.resize`)
+keeps the vertical extent fixed at `VIEW_HEIGHT` and only widens the frustum, so an
+ultrawide screen sees more table rather than smaller cards. The `CameraRig` component
+(`src/app/scene/camera-rig/camera-rig.ts`) poses it: a fixed bird's-eye base pose (~26° off
+vertical, `CAMERA_POS`/`CAMERA_TARGET`, aimed slightly toward the player's own end) looking
+down on the table from the player's table end — mirrored to the
 opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, fixed once on mount — plus
 a slight clamped pan toward the mouse near screen edges. There are no avatars or movement — the former door/avatar code was
 removed with the pivot to a card-table view. `P2pService`'s position stream is dormant
@@ -108,23 +112,46 @@ disappears behind the hand/pile widgets. `CardInteractions`
 raycasts hover/picking for cards, runs the drag-to-move flow (press and drag past
 a small threshold → float at `DRAG_Y` → release commits onto whatever the camera-through-cursor
 ray hits: table/floor/another card, so cards stack; a drop over a registered **`CardDropTarget`**
-— the hand/deck/graveyard UI, registered by Zones — routes the card into that zone instead; a
+— the hand/deck/graveyard/exile UI, registered by Zones — routes the card into that zone
+instead; a
 drop that hits nothing snaps the card back; Escape cancels; a plain click taps/untaps a card —
 a networked quarter turn via the `tapped` field on CardState), posts action-history lines, and
 owns the popup state rendered by
-`CardOverlay` (context menus for cards — view/rotate/flip/related/to-hand/to-deck/
-to-graveyard/delete) plus the **util window**
-(`src/app/scene/util-window/`), opened by right-clicking empty table: debounced card search
+`CardOverlay` (context menus for cards — view/tap/rotate/flip/related/to-hand/to-deck/
+to-graveyard/to-exile/delete, and the item menu) plus the **util window**
+(`src/app/scene/util-window/`), opened by right-clicking empty table: the game items
+(dice/coin/counters, see below) above a debounced card search
 via `CardSearchService` (`card-search.service.ts`, Scryfall fetch, cached) with per-hit
 add-to-table/hand/deck. Hotkeys on the hovered card live in the `HOTKEYS` record.
 `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the hand DOM
 continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs the play)
 and `revert` (off-table miss or Escape, back into the hand) decide the ending. The pointer
 listeners live on `window` (not the canvas) so a hand drag started over DOM keeps following;
-hover picking is gated to moves whose target is the canvas. Dice/coins/counters (the former
-`src/app/scene/token/` `TokenStore` + procedural `Token`) were removed.
+hover picking is gated to moves whose target is the canvas.
 
-Player zones (hand/deck/graveyard) live in `src/app/zones/`: `ZoneStore` (root service)
+**Selection** (`designdocs/cardselection.md`): dragging on empty table draws a marquee
+(`marquee` signal, drawn by `CardOverlay`); on release every card whose origin projects
+inside it lands in `selectedIds` and renders with the hover highlight. Pressing one selected
+card drags the whole group (offsets kept, no DOM ghost — the cards stay in the scene);
+a plain click still taps just one; `act()` applies `GROUP_ACTIONS` (`card.types.ts`:
+tap/related/delete) to the whole selection and drops the selection for anything else.
+Clicking empty table, or grabbing/right-clicking a card that is not selected, clears it.
+
+**Table items** (`designdocs/additionalitems.md`) live in `src/app/scene/item/`: `ItemStore`
+(root) projects `item:` world objects into `ItemState` (kind, position, absolute unwrapped
+`rotation`, `value`, `variant`, `attachedTo`) exactly like `CardStore` does for cards, and the
+`Item` component renders one — a placeholder body from `item-geometry.ts` (pip-textured d6
+box, polyhedra for d4/d12/d20 with a value label sprite, a two-faced coin cylinder, a counter
+disc whose canvas texture prints "+2/+2") unless a GLB is registered in `ITEM_MODEL_URLS`
+(`scene-assets.ts`), in which case it clones that instead. Rolls and flips are plain state
+writes: `roll()`/`flip()` add whole turns to `rotation` (the d6 in quarter turns, so the pips
+on top _are_ the logged result; the coin in half turns, so odd counts land it on the other
+side) and every client lerps its own mesh over 1.5 s — no frame streaming and no physics.
+Counters count up on left-click, down on right-click, have no menu (delete hotkey while
+hovered), and attach to a card when dropped on one: `attachedTo` + a position that becomes an
+offset from that card's origin, so the counter follows it and leaves the table with it.
+
+Player zones (hand/deck/graveyard/exile) live in `src/app/zones/`: `ZoneStore` (root service)
 projects `zone:<uid>:<kind>` world objects (`{ ownerName, cards }`; whole-zone LWW writes) and
 owns draw/shuffle/play/take mutations, most posting a history line; closed zones (hand/deck)
 log without card names. (`playFromHand` is the exception — it removes the card silently, and
@@ -136,13 +163,22 @@ off to `CardInteractions.beginDragFromHand`, spawning the card face-up at `seatY
 following the cursor; releasing over the table commits, releasing off-table returns it to the
 hand; a hand too wide to fit is pannable by wheeling over it — `onHandWheel` shifts `handScroll`).
 My deck pile draws on **left-click** and opens a right-click menu (shuffle only); the graveyard
-opens on click. A card dragged onto a zone widget is absorbed by that zone: Zones registers a
+and exile piles open on click. A card dragged onto a zone widget is absorbed by that zone:
+Zones registers a
 `CardDropTarget` per kind (hit-tested with `elementFromPoint`) that calls `takeFromTable`.
-Other players' zone counts sit top-right with examinable graveyards. Zones are **not** created on entry: until a player joins the game the
-zone UI is hidden behind a bottom-right "Choose Deck" button (`hasMine()` is the gate) whose
-picker lists `DeckStore` decks; choosing one resolves every decklist entry against the card
-database, calls `loadDeck()` (zones created with the shuffled deck), and prefetches the card
-images. `refreshOwnerName()` only renames zones that already exist (rejoin).
+Other players' zone counts sit top-right, with examinable graveyard and exile. Zones are
+**not** created on entry: until a player joins the game the
+zone UI is hidden behind a **centred** "Choose Deck" button (`hasMine()` is the gate) whose
+picker lists `DeckStore` decks; picking one only stages it (`pendingDeck`) — **confirming** is
+what resolves every decklist entry against the card database, calls `loadDeck()` (zones
+created with the shuffled deck), and starts prefetching the card images, so merely browsing
+decks never costs a download. `refreshOwnerName()` only renames zones that already exist
+(rejoin).
+
+The in-game overlays are sized in the global **`--u`** unit (`styles.scss`): 1% of the largest
+16:9 box that fits the viewport (`min(1vw, 1.7778vh)`), with `--ui-gap` insetting widgets from
+the screen edge. The UI is authored at 16:9 and grows with the window; on an ultrawide the
+height caps the unit so nothing balloons.
 
 Decks and the card database (`src/app/decks/`, `src/app/carddb/`): `DeckStore` (root) stores
 decks either **locally** (guests — browser localStorage, key `virtual-tavern.decks`, per-device
@@ -175,9 +211,18 @@ Environment models are **plain GLB** files (no Draco) in `public/models/` (serve
 instant rejoin) and `loading`/`progress`/`error` signals that drive the scene's loading
 overlay. Cached Groups are never disposed — `dispose()` is only for replaced procedural
 placeholders. Missing model files fall back gracefully to the procedural floor (console warn),
-so the app works before any GLB exists.
+so the app works before any GLB exists. Item models are optional in the same spirit:
+`ITEM_MODEL_URLS` is empty, so dice/coins/counters render procedural placeholders and no
+request is ever made for a file that isn't there.
 
-Instanced objects (cards) are Angular components that render into Three, not the DOM: the
+`loadTexture` (card art, from Scryfall) tries an `<img>` first and falls back to fetching the
+bytes in CORS mode and building the texture from an `ImageBitmap`. That fallback exists
+because the same art is also shown in the DOM: an `<img>` **without** `crossorigin` can leave
+an opaque response in the HTTP cache that then fails as a WebGL texture — cards with images
+everywhere except on the table. Every card `<img>` in the app therefore sets
+`crossorigin="anonymous"`; keep it that way when adding new ones.
+
+Instanced objects (cards, items) are Angular components that render into Three, not the DOM: the
 Scene component provides `SceneGraph` (`src/app/scene/scene-graph.ts`, a root `Group` added
 to the Three scene), and `Card` (`src/app/scene/card/card.ts`, rendered per `CardState` by
 the Scene's `@for`) clones the shared card model (`CARD_MODEL_URL`), takes per-instance
@@ -185,8 +230,11 @@ clones of **all** its materials (so hover can tint the whole mesh; the front-fac
 name matching `/front|artwork/i` — is textured from `state().src` via
 `AssetLoaderService.loadTexture`, cached, sRGB, `flipY = false` to match glTF UVs), and
 registers its `Group` with `CardInteractions` for raycast picking. On destroy a card
-disposes only its cloned materials — geometry/textures stay shared. Follow this pattern for
-future instanced scene objects.
+disposes only its cloned materials — geometry/textures stay shared. `Item`
+(`src/app/scene/item/item.ts`) follows the same pattern for dice/coins/counters, but owns its
+procedural geometry and canvas textures too, so it disposes those as well; its nodes are
+wrapper (world position) → pivot (rest height, and the coin's hop) → body (what a roll
+rotates). Follow this pattern for future instanced scene objects.
 
 ### Routing and screens
 

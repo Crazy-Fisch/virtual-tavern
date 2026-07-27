@@ -22,7 +22,13 @@
           @let rec = resolve(entry.card);
           <figure class="db-card" [class.missing]="!rec" [class.noimg]="rec && !rec.src">
             @if (rec && rec.src) {
-              <img [src]="rec.src" [alt]="rec.name" [title]="rec.name" loading="lazy" />
+              <img
+                [src]="rec.src"
+                [alt]="rec.name"
+                [title]="rec.name"
+                crossorigin="anonymous"
+                loading="lazy"
+              />
             }
             <figcaption>
               <span class="cname">{{ entry.card }}</span>
@@ -66,7 +72,7 @@
               (contextmenu)="openMenu($event, d)"
             >
               @if (firstCardSrc(d); as bg) {
-                <img class="deck-bg" [src]="bg" alt="" draggable="false" />
+                <img class="deck-bg" [src]="bg" alt="" crossorigin="anonymous" draggable="false" />
               }
               <span class="deck-name">{{ d.name }}</span>
               <span class="deck-count">{{ deckSize(d) }}</span>

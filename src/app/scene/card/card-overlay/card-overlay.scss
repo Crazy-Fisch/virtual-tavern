@@ -4,13 +4,26 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  font: 14px/1.4 'Inter', system-ui, sans-serif;
+  font:
+    14px/1.4 'Inter',
+    system-ui,
+    sans-serif;
 }
 
 .context-menu,
 .related-panel,
 app-dialog {
   pointer-events: auto;
+}
+
+// Marquee dragged over empty table; purely decorative (the pointer flow that
+// draws it lives on the canvas), so it stays non-interactive.
+.marquee {
+  position: absolute;
+  border: 1px solid rgba(160, 140, 255, 0.9);
+  background: rgba(108, 76, 255, 0.18);
+  border-radius: 2px;
+  pointer-events: none;
 }
 
 .context-menu {
@@ -23,6 +36,15 @@ app-dialog {
   background: rgba(24, 24, 34, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  // Header shown when the menu's actions apply to a whole selection.
+  .group-note {
+    margin: 0;
+    padding: 6px 10px 4px;
+    color: #b9a9ff;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
 
   button {
     padding: 7px 10px;

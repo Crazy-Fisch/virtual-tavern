@@ -4,6 +4,8 @@ import { vi } from 'vitest';
 import { RoomService } from '../../room/room.service';
 import { FakeRoomService } from '../../room/testing/fake-room.service';
 import { ZoneStore } from '../../zones/zone-store';
+import { ItemStore } from '../item/item-store';
+import { newItem } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
 import { CardInteractions } from './card-interactions';
 import { CardStore } from './card-store';
@@ -12,6 +14,7 @@ import { newCardId } from './card.types';
 describe('CardInteractions', () => {
   let interactions: CardInteractions;
   let store: CardStore;
+  let items: ItemStore;
   let zones: ZoneStore;
   let room: FakeRoomService;
   let cardId: string;
@@ -29,6 +32,7 @@ describe('CardInteractions', () => {
     });
     interactions = TestBed.inject(CardInteractions);
     store = TestBed.inject(CardStore);
+    items = TestBed.inject(ItemStore);
     zones = TestBed.inject(ZoneStore);
     cardId = newCardId();
     store.add({
@@ -86,13 +90,28 @@ describe('CardInteractions', () => {
     expect(room.actions).toEqual(['put Water Worm into their graveyard']);
   });
 
+  it('toExile moves the card off the table into my exile zone', () => {
+    interactions.act(cardId, 'toExile');
+    expect(store.card(cardId)).toBeUndefined();
+    expect(zones.mine().exile).toMatchObject([{ name: 'Water Worm' }]);
+    expect(room.actions).toEqual(['exiled Water Worm']);
+  });
+
+  it('a card leaving the table takes the counters attached to it along', () => {
+    const counter = newItem('counter', [0, 0.5, 0]);
+    items.add(counter);
+    items.update(counter.id, { attachedTo: cardId });
+    interactions.act(cardId, 'toGrave');
+    expect(items.item(counter.id)).toBeUndefined();
+  });
+
   it('unregister clears every reference to that object', () => {
     interactions.register(cardId, new Group());
     interactions.hoveredId.set(cardId);
     interactions.draggingId.set(cardId);
     interactions.contextMenu.set({ id: cardId, x: 0, y: 0 });
     interactions.viewCardId.set(cardId);
-    interactions.relatedPanel.set({ id: cardId, x: 0, y: 0 });
+    interactions.relatedPanel.set({ ids: [cardId], x: 0, y: 0 });
     interactions.unregister(cardId);
     expect(interactions.hoveredId()).toBeNull();
     expect(interactions.draggingId()).toBeNull();
@@ -118,7 +137,7 @@ describe('CardInteractions', () => {
 
   it('Escape closes the popups', () => {
     interactions.contextMenu.set({ id: cardId, x: 0, y: 0 });
-    interactions.relatedPanel.set({ id: cardId, x: 0, y: 0 });
+    interactions.relatedPanel.set({ ids: [cardId], x: 0, y: 0 });
     interactions.utilWindow.set({ x: 0, y: 0, world: [0, 0.5, 0] });
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(interactions.contextMenu()).toBeNull();
@@ -160,8 +179,9 @@ describe('CardInteractions', () => {
         y: 0,
         toJSON: () => ({}),
       } as DOMRect);
-      const camera = TestBed.inject(SceneCamera).camera;
-      camera.aspect = WIDTH / HEIGHT;
+      const sceneCamera = TestBed.inject(SceneCamera);
+      sceneCamera.setAspect(WIDTH / HEIGHT);
+      const camera = sceneCamera.camera;
       camera.position.set(0, 8, 6);
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
@@ -306,6 +326,205 @@ describe('CardInteractions', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       expect(hooks.revert).toHaveBeenCalledOnce();
       expect(interactions.draggingId()).toBeNull();
+    });
+
+    /**
+     * A pickable object at a world position, standing in for a rendered
+     * card/item. Returned so a test can move it where the real component would
+     * (the scene objects follow state; nothing here does).
+     */
+    function registerObject(id: string, position: [number, number, number]): Group {
+      const object = new Group();
+      object.add(new Mesh(new BoxGeometry(0.6, 0.04, 0.9), new MeshBasicMaterial()));
+      object.position.set(...position);
+      object.updateMatrixWorld(true);
+      interactions.register(id, object);
+      return object;
+    }
+
+    /** A second table card, registered for picking. */
+    function addSecondCard(position: [number, number, number] = [1, 0.5, 0]): string {
+      const id = newCardId();
+      store.add({
+        id,
+        name: 'Second',
+        src: '',
+        position,
+        yaw: 0,
+        faceUp: true,
+        tapped: false,
+        relatedIds: [],
+      });
+      registerObject(id, position);
+      return id;
+    }
+
+    /** Drag a marquee across empty table between two world points. */
+    function marqueeBetween(from: [number, number, number], to: [number, number, number]): void {
+      down(screenAt(...from));
+      move(screenAt(...to));
+      up(screenAt(...to));
+    }
+
+    describe('selection (cardselection.md)', () => {
+      it('dragging over empty table selects every card whose origin it covers', () => {
+        const second = addSecondCard();
+        const outside = addSecondCard([6, 0.5, 0]); // beyond the marquee
+        down(screenAt(-2, 0, -2));
+        move(screenAt(2, 0, 2));
+        expect(interactions.marquee()).not.toBeNull();
+        up(screenAt(2, 0, 2));
+        expect(interactions.marquee()).toBeNull();
+        expect([...interactions.selectedIds()].sort()).toEqual([cardId, second].sort());
+        expect(interactions.isSelected(outside)).toBe(false);
+      });
+
+      it('a click on empty table clears the selection', () => {
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        expect(interactions.selectedIds().size).toBeGreaterThan(0);
+        const at = screenAt(-2, 0, -2);
+        down(at);
+        up(at);
+        expect(interactions.selectedIds().size).toBe(0);
+      });
+
+      it('dragging one selected card moves the whole selection, keeping offsets', () => {
+        const second = addSecondCard();
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        const target = screenAt(2, 0, 1);
+        down(screenAt(0, 0.5, 0));
+        move(target);
+        expect(interactions.dragGhost()).toBeNull(); // a group stays 3D, no ghost
+        up(target);
+        const moved = store.card(cardId)!;
+        const follower = store.card(second)!;
+        expect(moved.position[0]).toBeCloseTo(2, 3);
+        expect(moved.position[2]).toBeCloseTo(1, 3);
+        expect(follower.position[0]).toBeCloseTo(3, 3); // kept its +1 offset
+        expect(follower.position[2]).toBeCloseTo(1, 3);
+        expect(follower.position[1]).toBeCloseTo(moved.position[1], 5);
+      });
+
+      it('clicking one card of a selection taps only that card and keeps the selection', () => {
+        const second = addSecondCard();
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        const at = screenAt(0, 0.5, 0);
+        down(at);
+        up(at);
+        expect(store.card(cardId)!.tapped).toBe(true);
+        expect(store.card(second)!.tapped).toBe(false);
+        expect(interactions.selectedIds().size).toBe(2);
+      });
+
+      it('group actions hit the whole selection; other actions drop it and hit one card', () => {
+        const second = addSecondCard();
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        interactions.act(cardId, 'tap');
+        expect(store.card(cardId)!.tapped).toBe(true);
+        expect(store.card(second)!.tapped).toBe(true);
+
+        interactions.act(cardId, 'flip'); // not a group action
+        expect(store.card(cardId)!.faceUp).toBe(false);
+        expect(store.card(second)!.faceUp).toBe(true);
+        expect(interactions.selectedIds().size).toBe(0);
+      });
+
+      it('deleting through a selection removes every selected card', () => {
+        const second = addSecondCard();
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        interactions.act(second, 'delete');
+        expect(store.card(cardId)).toBeUndefined();
+        expect(store.card(second)).toBeUndefined();
+        expect(interactions.selectedIds().size).toBe(0);
+      });
+
+      it('the related panel of a selection lists every selected card as an owner', () => {
+        const second = addSecondCard();
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        interactions.act(cardId, 'related');
+        expect([...interactions.relatedPanel()!.ids].sort()).toEqual([cardId, second].sort());
+      });
+
+      it('grabbing or right-clicking a card outside the selection drops it', () => {
+        const outside = addSecondCard([6, 0.5, 0]);
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        expect(interactions.isSelected(cardId)).toBe(true);
+        canvas.dispatchEvent(new MouseEvent('contextmenu', screenAt(6, 0.5, 0)));
+        expect(interactions.selectedIds().size).toBe(0);
+        expect(interactions.contextMenu()!.id).toBe(outside);
+      });
+    });
+
+    describe('table items (additionalitems.md)', () => {
+      /** An item on the table, registered for picking; the Group is its stand-in mesh. */
+      function addItem(
+        kind: 'counter' | 'd6',
+        position: [number, number, number],
+      ): { id: string; object: Group } {
+        const item = newItem(kind, position);
+        items.add(item);
+        const object = registerObject(item.id, position);
+        room.actions.length = 0;
+        return { id: item.id, object };
+      }
+
+      it('left-click counts a counter up, right-click counts it down', () => {
+        const { id } = addItem('counter', [2, 0.21, 0]);
+        const at = screenAt(2, 0.21, 0);
+        down(at);
+        up(at);
+        expect(items.item(id)!.value).toBe(2);
+        canvas.dispatchEvent(new MouseEvent('contextmenu', at));
+        expect(items.item(id)!.value).toBe(1);
+        expect(interactions.itemMenu()).toBeNull(); // counters have no menu
+      });
+
+      it('right-clicking a die opens the item menu, and Roll changes its facing', () => {
+        const { id } = addItem('d6', [2, 0.21, 0]);
+        canvas.dispatchEvent(new MouseEvent('contextmenu', screenAt(2, 0.21, 0)));
+        expect(interactions.itemMenu()!.id).toBe(id);
+        expect(interactions.contextMenu()).toBeNull();
+        interactions.itemAct(id, 'roll');
+        expect(items.item(id)!.rotation).not.toEqual([0, 0, 0]);
+        expect(interactions.itemMenu()).toBeNull();
+        expect(room.actions.at(-1)).toMatch(/^rolled [1-6] on a d6$/);
+      });
+
+      it('the delete hotkey removes a hovered item', () => {
+        const { id } = addItem('d6', [2, 0.21, 0]);
+        interactions.hoveredId.set(id);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+        expect(items.item(id)).toBeUndefined();
+        expect(room.actions).toEqual(['removed a d6']);
+      });
+
+      it('a counter dropped on a card attaches to it as an offset, and detaches elsewhere', () => {
+        const { id, object } = addItem('counter', [2, 0.21, 0]);
+        down(screenAt(2, 0.21, 0));
+        move(screenAt(0, 0.5, 0));
+        up(screenAt(0, 0.5, 0));
+        const attached = items.item(id)!;
+        expect(attached.attachedTo).toBe(cardId);
+        expect(attached.position[0]).toBeCloseTo(0, 1); // offset from the card's origin
+        expect(attached.position[2]).toBeCloseTo(0, 1);
+
+        // The rendered object follows the state in the app; do it by hand here.
+        object.position.set(1, 0.4, 0);
+        object.updateMatrixWorld(true);
+        down(screenAt(1, 0.4, 0));
+        move(screenAt(3, 0, 2));
+        up(screenAt(3, 0, 2));
+        const loose = items.item(id)!;
+        expect(loose.attachedTo).toBeNull();
+        expect(loose.position[0]).toBeCloseTo(3, 3);
+      });
+
+      it('items are never picked up by a marquee — a selection is cards only', () => {
+        const { id } = addItem('counter', [1, 0.21, 0]);
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        expect(interactions.isSelected(id)).toBe(false);
+        expect(interactions.isSelected(cardId)).toBe(true);
+      });
     });
   });
 });
