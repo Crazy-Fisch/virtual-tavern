@@ -1,26 +1,43 @@
-<!-- Other players' zone sizes; graveyard and exile are open for examination. -->
+<!-- Other players' zones, mirrored at the top. Hands show as backs (faces only
+     when revealed); the deck is a count; graveyard and exile are examinable. -->
 <div class="others">
   @for (p of zones.others(); track p.uid) {
-    <div class="player">
-      <span class="name">{{ p.name }}</span>
-      <span class="stat" title="Cards in hand">✋ {{ p.hand.length }}</span>
-      <span class="stat" title="Cards in deck">🂠 {{ p.deck.length }}</span>
-      <button
-        type="button"
-        class="stat open"
-        title="Examine graveyard"
-        (click)="examine(p.uid, 'graveyard')"
-      >
-        ⚰ {{ p.graveyard.length }}
-      </button>
-      <button
-        type="button"
-        class="stat open"
-        title="Examine exile"
-        (click)="examine(p.uid, 'exile')"
-      >
-        ✦ {{ p.exile.length }}
-      </button>
+    <div class="opp">
+      <span class="opp-name">{{ p.name }}</span>
+      <span class="opp-life" title="Life">♥ {{ p.life ?? '—' }}</span>
+
+      <div class="opp-hand" [title]="p.hand.length + ' cards in hand'">
+        @for (c of p.hand.slice(0, maxHand); track c.id) {
+          <div class="opp-card" [class.back]="!c.revealed">
+            @if (c.revealed && c.src) {
+              <img [src]="c.src" [alt]="c.name" crossorigin="anonymous" draggable="false" />
+            }
+          </div>
+        }
+        @if (p.hand.length > maxHand) {
+          <span class="opp-more">+{{ p.hand.length - maxHand }}</span>
+        }
+      </div>
+
+      <div class="opp-piles">
+        <span class="mini deck" title="Cards in deck">🂠 {{ p.deck.length }}</span>
+        <button
+          type="button"
+          class="mini grave"
+          title="Examine graveyard"
+          (click)="examine(p.uid, 'graveyard')"
+        >
+          ⚰ {{ p.graveyard.length }}
+        </button>
+        <button
+          type="button"
+          class="mini exile"
+          title="Examine exile"
+          (click)="examine(p.uid, 'exile')"
+        >
+          ✦ {{ p.exile.length }}
+        </button>
+      </div>
     </div>
   }
 </div>
@@ -43,20 +60,50 @@
     }
   </div>
 } @else if (zones.mine(); as me) {
-  <!-- My hand, fanned like physically held cards. Drag a card onto the table to
-       play it; wheel over the hand to pan a hand too wide to fit. -->
-  <div class="hand" #hand [style.transform]="handTransform()" (wheel)="onHandWheel($event)">
-    @for (c of me.hand; track c.id; let i = $index) {
-      <button
-        type="button"
-        class="hand-card"
-        [style.transform]="fan(i, me.hand.length)"
-        [title]="'Drag onto the table to play ' + c.name"
-        (pointerdown)="startDrag($event, c)"
-      >
-        <img [src]="c.src" [alt]="c.name" crossorigin="anonymous" draggable="false" />
-      </button>
+  <!-- My hand, fanned like physically held cards, clipped to the middle 50% of
+       the screen. Drag a card onto the table to play it; right-click a card to
+       reveal it; wheel over the hand to pan a hand too wide to fit. -->
+  <div class="hand-clip">
+    <div class="hand" [style.transform]="handTransform()" (wheel)="onHandWheel($event)">
+      @for (c of me.hand; track c.id; let i = $index) {
+        <button
+          type="button"
+          class="hand-card"
+          [class.revealed]="c.revealed"
+          [style.transform]="handCardTransform(i, me.hand.length)"
+          [title]="'Drag onto the table to play ' + c.name + ' — right-click to reveal'"
+          (pointerdown)="startDrag($event, c)"
+          (contextmenu)="openHandMenu($event, c)"
+        >
+          <img [src]="c.src" [alt]="c.name" crossorigin="anonymous" draggable="false" />
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- My life counter and the reveal-hand toggle, bottom-left of the hand. -->
+  <div class="my-controls">
+    @if (me.life === null) {
+      <div class="life-pick" title="Choose your starting life">
+        @for (n of startLives; track n) {
+          <button type="button" class="life-opt" (click)="chooseLife(n)">{{ n }}</button>
+        }
+      </div>
+    } @else {
+      <div class="life">
+        <button type="button" class="life-btn" title="Lose 1 life" (click)="bumpLife(-1)">−</button>
+        <span class="life-total">{{ me.life }}</span>
+        <button type="button" class="life-btn" title="Gain 1 life" (click)="bumpLife(1)">+</button>
+      </div>
     }
+    <button
+      type="button"
+      class="reveal-toggle"
+      [class.on]="allRevealed()"
+      (click)="revealAll()"
+    >
+      {{ allRevealed() ? 'Hide hand' : 'Reveal hand' }}
+    </button>
   </div>
 
   <!-- My piles. Right-click for zone actions. -->
@@ -110,11 +157,22 @@
   </div>
 }
 
+@if (handMenu(); as hm) {
+  <div class="hand-menu" [style.left.px]="hm.x" [style.top.px]="hm.y">
+    <button type="button" (click)="toggleRevealCard()">
+      {{ hm.card.revealed ? 'Hide from others' : 'Reveal to others' }}
+    </button>
+  </div>
+}
+
 @if (choosingDeck()) {
   <app-dialog heading="Choose a deck" (close)="choosingDeck.set(false)">
     <div class="deck-choices">
       @for (d of decks.decks(); track d.id) {
         <button type="button" class="deck-tile" (click)="pickDeck(d)">
+          @if (firstCardSrc(d); as bg) {
+            <img class="deck-bg" [src]="bg" alt="" crossorigin="anonymous" draggable="false" />
+          }
           <span class="deck-name">{{ d.name }}</span>
           <span class="deck-count">{{ deckSize(d) }} cards</span>
         </button>
@@ -146,9 +204,20 @@
     <div class="examine-grid">
       @for (c of examinedCards(); track c.id) {
         <figure class="examine-card">
-          <img [src]="c.src" [alt]="c.name" [title]="c.name" crossorigin="anonymous" />
           @if (isMine()) {
+            <!-- Mine: drag onto the table or a zone, or use the button for the hand. -->
+            <img
+              class="draggable"
+              [src]="c.src"
+              [alt]="c.name"
+              [title]="'Drag ' + c.name + ' onto the table or a zone'"
+              crossorigin="anonymous"
+              draggable="false"
+              (pointerdown)="startDrag($event, c, examining()!.kind)"
+            />
             <button type="button" (click)="toHand(c)">To hand</button>
+          } @else {
+            <img [src]="c.src" [alt]="c.name" [title]="c.name" crossorigin="anonymous" />
           }
         </figure>
       } @empty {

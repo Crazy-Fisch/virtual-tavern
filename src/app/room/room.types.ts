@@ -29,9 +29,9 @@ export type ChatMessage = {
 
 /**
  * JSON payload persisted per world object. The object id's prefix says which
- * domain owns it and what shape `data` has: `card:` (CardStore), `zone:`
- * (ZoneStore). Unknown prefixes (e.g. `token:` rows from removed features)
- * are simply ignored. Domain stores parse defensively.
+ * domain owns it and what shape `data` has: `card:` (CardStore), `item:`
+ * (ItemStore), `zone:` and `life:` (ZoneStore). Unknown prefixes (e.g. `token:`
+ * rows from removed features) are simply ignored. Domain stores parse defensively.
  */
 export type WorldObjectData = Record<string, unknown>;
 

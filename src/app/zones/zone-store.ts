@@ -1,20 +1,35 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { RoomService } from '../room/room.service';
 import { CardState } from '../scene/card/card.types';
-import { PlayerZones, ZONE_KINDS, ZONE_PREFIX, ZoneCard, ZoneKind, zoneId } from './zone.types';
+import {
+  LIFE_PREFIX,
+  PlayerZones,
+  ZONE_KINDS,
+  ZONE_PREFIX,
+  ZoneCard,
+  ZoneKind,
+  lifeId,
+  zoneId,
+} from './zone.types';
 
 function parseCards(value: unknown): ZoneCard[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     const card = entry as Partial<ZoneCard> | null;
-    return card && typeof card.id === 'string' && typeof card.src === 'string'
-      ? [{ id: card.id, name: typeof card.name === 'string' ? card.name : 'a card', src: card.src }]
-      : [];
+    if (!card || typeof card.id !== 'string' || typeof card.src !== 'string') return [];
+    // `revealed` is only stored when true, so a plain card carries no such key
+    // and round-trips unchanged (keeps existing specs' toEqual happy).
+    const base: ZoneCard = {
+      id: card.id,
+      name: typeof card.name === 'string' ? card.name : 'a card',
+      src: card.src,
+    };
+    return [card.revealed === true ? { ...base, revealed: true } : base];
   });
 }
 
 function emptyZones(uid: string, name: string): PlayerZones {
-  return { uid, name, hand: [], deck: [], graveyard: [], exile: [] };
+  return { uid, name, hand: [], deck: [], graveyard: [], exile: [], life: null };
 }
 
 /** History line for a card leaving the table for each zone. */
@@ -48,8 +63,9 @@ export class ZoneStore {
 
   /** Every player with zones in this room (including me). */
   readonly all = computed<PlayerZones[]>(() => {
+    const world = this.room.worldState();
     const players = new Map<string, PlayerZones>();
-    for (const [id, state] of Object.entries(this.room.worldState())) {
+    for (const [id, state] of Object.entries(world)) {
       if (!id.startsWith(ZONE_PREFIX)) continue;
       const rest = id.slice(ZONE_PREFIX.length);
       const sep = rest.lastIndexOf(':');
@@ -61,6 +77,14 @@ export class ZoneStore {
       if (typeof ownerName === 'string' && ownerName) zones.name = ownerName;
       zones[kind] = parseCards(state.data['cards']);
       players.set(uid, zones);
+    }
+    // Second pass: attach life totals to players who already have zones (life is
+    // only ever written once someone has joined, so a life-only ghost never appears).
+    for (const [id, state] of Object.entries(world)) {
+      if (!id.startsWith(LIFE_PREFIX)) continue;
+      const zones = players.get(id.slice(LIFE_PREFIX.length));
+      const life = state.data['life'];
+      if (zones && typeof life === 'number') zones.life = life;
     }
     return [...players.values()];
   });
@@ -167,6 +191,61 @@ export class ZoneStore {
     );
     this.write('hand', [...this.mine().hand, card]);
     this.room.sendAction(`returned ${card.name} to their hand`);
+  }
+
+  /**
+   * Remove a card from one of my zones and return it, without logging — the
+   * silent pick-up for dragging a card out of a zone (the drop landing decides
+   * what history line, if any, to post). Returns null if the card is gone.
+   */
+  removeFromZone(kind: ZoneKind, zoneCardId: string): ZoneCard | null {
+    const zone = this.mine()[kind];
+    const card = zone.find((c) => c.id === zoneCardId);
+    if (!card) return null;
+    this.write(
+      kind,
+      zone.filter((c) => c.id !== zoneCardId),
+    );
+    return card;
+  }
+
+  /**
+   * Set my life total. The first time (life was unset) logs the starting choice;
+   * later adjustments are silent so the +/- buttons don't spam the history.
+   */
+  setLife(life: number): void {
+    const uid = this.room.userId();
+    if (!uid) return;
+    const first = this.mine().life === null;
+    this.room.setWorldObject(lifeId(uid), { life });
+    if (first) this.room.sendAction(`set their starting life to ${life}`);
+  }
+
+  /**
+   * Reveal or hide my whole hand to the other players at once — overriding any
+   * per-card reveal state, as the toggle is meant to (playerui.md).
+   */
+  revealHand(revealed: boolean): void {
+    const hand = this.mine().hand;
+    if (hand.length === 0) return;
+    this.write(
+      'hand',
+      hand.map((c) => ({ ...c, revealed })),
+    );
+    this.room.sendAction(revealed ? 'revealed their hand' : 'hid their hand');
+  }
+
+  /** Toggle whether one hand card's face is shown to the other players. */
+  toggleReveal(zoneCardId: string): void {
+    const hand = this.mine().hand;
+    const card = hand.find((c) => c.id === zoneCardId);
+    if (!card) return;
+    const revealed = !card.revealed;
+    this.write(
+      'hand',
+      hand.map((c) => (c.id === zoneCardId ? { ...c, revealed } : c)),
+    );
+    this.room.sendAction(revealed ? `revealed ${card.name}` : `hid ${card.name}`);
   }
 
   private write(kind: ZoneKind, cards: ZoneCard[]): void {

@@ -80,6 +80,17 @@ describe('Card', () => {
     await flush();
   });
 
+  function materialNamed(name: string): MeshStandardMaterial {
+    let found: MeshStandardMaterial | undefined;
+    graph.root.traverse((obj) => {
+      if (obj instanceof Mesh && !Array.isArray(obj.material) && obj.material.name === name) {
+        found = obj.material as MeshStandardMaterial;
+      }
+    });
+    expect(found).toBeDefined();
+    return found!;
+  }
+
   function frontMesh(): Mesh {
     let found: Mesh | undefined;
     graph.root.traverse((obj) => {
@@ -153,16 +164,26 @@ describe('Card', () => {
     expect(wrapper.rotation.y).toBeCloseTo(0);
   });
 
-  it('tints all materials while hovered and clears the tint after', async () => {
+  it('brightens the art face and tints the other faces while hovered, clearing after', async () => {
+    const back = materialNamed('CardBack');
+    const front = frontMesh().material as MeshStandardMaterial;
+    // The art face is self-lit from its texture (emissive white + emissiveMap),
+    // so it reads at full HTML-like brightness rather than a dim lit material.
+    expect(front.emissive.getHex()).toBe(0xffffff);
+
     interactions.hoveredId.set('card-1');
     fixture.detectChanges();
     await flush();
-    const material = frontMesh().material as MeshStandardMaterial;
-    expect(material.emissive.getHex()).toBeGreaterThan(0);
+    // Non-art faces take an emissive tint; the art face brightens via
+    // emissiveIntensity instead (tinting it would recolour the artwork).
+    expect(back.emissive.getHex()).toBeGreaterThan(0);
+    expect(front.emissiveIntensity).toBeGreaterThan(1);
+
     interactions.hoveredId.set(null);
     fixture.detectChanges();
     await flush();
-    expect(material.emissive.getHex()).toBe(0);
+    expect(back.emissive.getHex()).toBe(0);
+    expect(front.emissiveIntensity).toBe(1);
   });
 
   it('removes its object, unregisters, and disposes only its own materials on destroy', () => {

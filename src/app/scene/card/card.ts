@@ -7,8 +7,17 @@ import { CardInteractions } from './card-interactions';
 import { CardState } from './card.types';
 
 const HALF_PI = Math.PI / 2;
-/** Slight white tint (emissive) applied to every card material while hovered. */
+/** Slight white tint (emissive) applied to a card's non-art materials while hovered. */
 const HOVER_TINT = 0x333333;
+/**
+ * The front (art) face is self-lit from its texture (emissiveMap at this
+ * intensity), so a card on the table reads at the same full brightness as the
+ * same art shown in the DOM (hand/ghost/deck screens) instead of the dimmer,
+ * light-dependent look a plain lit material gives (playerui.md "card material").
+ * Hover nudges it a little brighter rather than tinting, keeping the colours true.
+ */
+const FRONT_EMISSIVE = 1;
+const FRONT_EMISSIVE_HOVER = 1.28;
 /**
  * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.5 brings a card
  * down to 0.32 × 0.44 m — well above true proportion, chosen for readability on
@@ -129,7 +138,13 @@ export class Card implements OnDestroy {
 
   private applyHover(hovered: boolean): void {
     for (const material of this.ownedMaterials) {
-      material.emissive.setHex(hovered ? HOVER_TINT : 0x000000);
+      // The art face carries its texture in `emissive`/`emissiveMap` (see
+      // applyImage), so tinting would recolour the art — brighten it instead.
+      if (material === this.frontMaterial && material.emissiveMap) {
+        material.emissiveIntensity = hovered ? FRONT_EMISSIVE_HOVER : FRONT_EMISSIVE;
+      } else {
+        material.emissive.setHex(hovered ? HOVER_TINT : 0x000000);
+      }
     }
   }
 
@@ -176,10 +191,31 @@ export class Card implements OnDestroy {
 
   private async applyImage(url: string): Promise<void> {
     this.appliedSrc = url;
+    if (!this.frontMaterial) return;
+    if (!url) {
+      // No art: fall back to a plainly lit face (no self-illumination).
+      this.frontMaterial.map = null;
+      this.frontMaterial.emissiveMap = null;
+      this.frontMaterial.color.setHex(0xffffff);
+      this.frontMaterial.emissive.setHex(0x000000);
+      this.frontMaterial.emissiveIntensity = FRONT_EMISSIVE;
+      this.frontMaterial.needsUpdate = true;
+      return;
+    }
     try {
       const texture = await this.assets.loadTexture(url);
       if (this.destroyed || !this.frontMaterial) return;
+      // Show the art unlit at full brightness, like an HTML <img>: kill the
+      // light-dependent diffuse (colour → black) and drive the face from the
+      // texture as an emissive map.
       this.frontMaterial.map = texture;
+      this.frontMaterial.emissiveMap = texture;
+      this.frontMaterial.color.setHex(0x000000);
+      this.frontMaterial.emissive.setHex(0xffffff);
+      const id = untracked(this.state).id;
+      const hovered =
+        this.interactions.hoveredId() === id || this.interactions.isSelected(id);
+      this.frontMaterial.emissiveIntensity = hovered ? FRONT_EMISSIVE_HOVER : FRONT_EMISSIVE;
       this.frontMaterial.needsUpdate = true;
     } catch (err) {
       console.warn(`[card] Could not load card image ${url}`, err);

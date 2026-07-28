@@ -36,4 +36,4 @@ export const CARD_MODEL_URL = 'models/Card.glb';
  * model instead, keeping its pose, animation and picking behaviour. Author it
  * centred on its own origin, sized in metres (a card is 0.32 × 0.44 m).
  */
-export const ITEM_MODEL_URLS: Readonly<Partial<Record<string, string>>> = {};
+export const ITEM_MODEL_URLS: Readonly<Partial<Record<string, string>>> = {"d4": 'models/d4.glb'};

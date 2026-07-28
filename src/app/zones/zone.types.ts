@@ -1,5 +1,7 @@
 /** World-object id prefix for player zones (see room.types.ts). */
 export const ZONE_PREFIX = 'zone:';
+/** World-object id prefix for a player's life total (`life:<uid>`, data `{ life }`). */
+export const LIFE_PREFIX = 'life:';
 
 export type ZoneKind = 'hand' | 'deck' | 'graveyard' | 'exile';
 export const ZONE_KINDS: readonly ZoneKind[] = ['hand', 'deck', 'graveyard', 'exile'];
@@ -13,6 +15,10 @@ export function zoneId(uid: string, kind: ZoneKind): string {
   return `${ZONE_PREFIX}${uid}:${kind}`;
 }
 
+export function lifeId(uid: string): string {
+  return `${LIFE_PREFIX}${uid}`;
+}
+
 /**
  * A card at rest inside a zone — no pose; it gets one (and a fresh `card:`
  * world id) when played onto the table. Zone contents are shared world state,
@@ -24,6 +30,12 @@ export type ZoneCard = {
   id: string;
   name: string;
   src: string;
+  /**
+   * Only meaningful for hand cards: while true the card's face is shown to
+   * everyone (others see the back otherwise). Absent = hidden; only ever
+   * stored when true, so a plain card round-trips unchanged.
+   */
+  revealed?: boolean;
 };
 
 /** All zones of one player, grouped from their `zone:<uid>:<kind>` objects. */
@@ -36,4 +48,6 @@ export type PlayerZones = {
   deck: ZoneCard[];
   graveyard: ZoneCard[];
   exile: ZoneCard[];
+  /** Life total (`life:<uid>` world object), or null until the player picks a starting total. */
+  life: number | null;
 };

@@ -1,12 +1,4 @@
-import {
-  Component,
-  ElementRef,
-  OnDestroy,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { CardDatabaseService } from '../carddb/card-database.service';
 import { DeckStore } from '../decks/deck-store';
 import { Deck, deckSize } from '../decks/deck.types';
@@ -25,34 +17,48 @@ type ZoneMenu = { kind: Exclude<ZoneKind, 'hand'>; x: number; y: number };
 /** Which zone is open in the examine dialog. */
 type Examining = { uid: string; kind: OpenZoneKind };
 
-/** Fan geometry: per-card tilt shrinks as the hand grows, capped for small hands. */
-const MAX_FAN_STEP_DEG = 6;
-const FAN_SPREAD_DEG = 42;
+/** Right-click menu on one of my hand cards (reveal a single card). */
+type HandMenu = { card: ZoneCard; x: number; y: number };
 
-/** Cursor travel (CSS px) past which a hand-card press becomes a play drag. */
+/** A press that is arming a drag — from my hand, or out of one of my open zones. */
+type PendingDrag = { card: ZoneCard; x: number; y: number; source: 'hand' | ZoneKind };
+
+/** Fan geometry: per-card tilt shrinks as the hand grows, capped for small hands. */
+const MAX_FAN_STEP_DEG = 5;
+const FAN_SPREAD_DEG = 36;
+
+/** Cursor travel (CSS px) past which a card-card press becomes a drag. */
 const HAND_DRAG_THRESHOLD_PX = 4;
 
-/** Breathing room kept beside a scrolled hand so its end cards stay reachable. */
-const HAND_SCROLL_MARGIN_PX = 48;
+/** At most this many hand cards are laid out at once; the rest scroll into view. */
+const MAX_VISIBLE_HAND = 10;
+/** Hand-card width in `--u` (150% of the pre-playerui size, per "size" section). */
+const HAND_CARD_U = 9.6;
+/** Fraction of the viewport width the visible hand may fill (its middle 50%). */
+const HAND_MAX_FRACTION = 0.5;
+
+/** Life totals offered before a player has picked a starting total. */
+const START_LIVES = [20, 40];
 
 /** CSS class of each zone's widget, for hit-testing a card dropped onto it. */
 const ZONE_SELECTORS: Readonly<Record<ZoneKind, string>> = {
-  hand: '.hand',
+  hand: '.hand-clip',
   deck: '.pile.deck',
   graveyard: '.pile.grave',
   exile: '.pile.exile',
 };
 
 /**
- * The DOM-side zone UI over the scene (plain Angular/HTML, not Three): my hand
- * fanned at the bottom like holding real cards (drag a card onto the table to
- * play it, like a real card — releasing it off the table puts it back in the
- * hand), my deck, graveyard and exile piles with click/right-click actions
- * (draw/shuffle/examine), and a summary of every other player's zone sizes
- * with examinable graveyards and exile. Rendered inside the Scene component so
- * it can reach the Scene-provided CardStore/CardInteractions when playing a card.
+ * The DOM-side zone UI over the scene (plain Angular/HTML, not Three). Mine is
+ * at the bottom — hand fanned like held cards (drag a card onto the table to
+ * play it), deck/graveyard/exile piles, a life counter and a reveal-hand toggle
+ * — and every other player's zones mirror it at the top: their hand shown as
+ * card backs (faces only when they reveal them), their deck as a count, and
+ * examinable graveyards/exile, plus their life total. Rendered inside the Scene
+ * component so it can reach the Scene-provided CardStore/CardInteractions when
+ * playing or dragging a card.
  *
- * Until a player joins the game their zone UI is hidden; a centred "Choose
+ * Until a player joins the game their own zone UI is hidden; a centred "Choose
  * Deck" button opens the picker (decks imported on the Decks screen). Picking
  * one only *selects* it — the player then confirms (or picks another), and
  * confirming is what creates the zones and starts warming the card images.
@@ -63,7 +69,10 @@ const ZONE_SELECTORS: Readonly<Record<ZoneKind, string>> = {
   templateUrl: './zones.html',
   styleUrl: './zones.scss',
   standalone: true,
-  host: { '(document:pointerdown)': 'onDocumentPointerDown($event)' },
+  host: {
+    '(document:pointerdown)': 'onDocumentPointerDown($event)',
+    '(window:resize)': 'onResize()',
+  },
 })
 export class Zones implements OnDestroy {
   protected readonly zones = inject(ZoneStore);
@@ -74,13 +83,15 @@ export class Zones implements OnDestroy {
   private readonly assets = inject(AssetLoaderService);
   private readonly room = inject(RoomService);
   protected readonly deckSize = deckSize;
+  protected readonly startLives = START_LIVES;
+  protected readonly maxHand = MAX_VISIBLE_HAND;
 
-  private readonly handEl = viewChild<ElementRef<HTMLDivElement>>('hand');
-
-  /** Pressed hand card; becomes a play drag past HAND_DRAG_THRESHOLD_PX. */
-  private pendingDrag: { card: ZoneCard; x: number; y: number } | null = null;
+  /** Pressed card; becomes a drag past HAND_DRAG_THRESHOLD_PX. */
+  private pendingDrag: PendingDrag | null = null;
 
   protected readonly menu = signal<ZoneMenu | null>(null);
+  /** Right-click menu on one of my hand cards, or null. */
+  protected readonly handMenu = signal<HandMenu | null>(null);
   /** The zone being examined (mine or another player's), or null. */
   protected readonly examining = signal<Examining | null>(null);
   /** Whether the "Choose Deck" picker dialog is open. */
@@ -89,6 +100,14 @@ export class Zones implements OnDestroy {
   protected readonly pendingDeck = signal<Deck | null>(null);
   /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
   protected readonly handScroll = signal(0);
+  /** Viewport size, tracked so the hand geometry re-fits on resize. */
+  private readonly viewport = signal({ w: window.innerWidth, h: window.innerHeight });
+
+  /** True when every card in my hand is currently revealed to the other players. */
+  protected readonly allRevealed = computed(() => {
+    const hand = this.zones.mine().hand;
+    return hand.length > 0 && hand.every((c) => c.revealed);
+  });
 
   /**
    * A card dropped over a zone's UI is routed there instead of onto the table.
@@ -129,6 +148,10 @@ export class Zones implements OnDestroy {
     for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
   }
 
+  protected onResize(): void {
+    this.viewport.set({ w: window.innerWidth, h: window.innerHeight });
+  }
+
   /** Pick a deck: shown for confirmation, but nothing is loaded yet. */
   protected pickDeck(deck: Deck): void {
     this.pendingDeck.set(deck);
@@ -162,25 +185,53 @@ export class Zones implements OnDestroy {
     for (const src of srcs) void this.assets.loadTexture(src).catch(() => undefined);
   }
 
-  /** Arrange hand cards in an arc (rotation about a pivot below the hand). */
-  protected fan(index: number, total: number): string {
-    const step = Math.min(MAX_FAN_STEP_DEG, FAN_SPREAD_DEG / Math.max(total, 1));
-    return `rotate(${(index - (total - 1) / 2) * step}deg)`;
+  /** Art of a deck's first card, backing its tile in the picker (like the Decks screen). */
+  protected firstCardSrc(deck: Deck): string | null {
+    const first = deck.list[0];
+    return first ? (this.db.lookup(first.card)?.src ?? null) : null;
   }
 
-  /** CSS transform positioning the fanned hand, including any scroll shift. */
+  /** Effective `--u` in px, mirroring styles.scss `min(1vw, 1.7778vh)`. */
+  private u(): number {
+    const { w, h } = this.viewport();
+    return Math.min(w / 100, (h * 1.7778) / 100);
+  }
+
+  /** Centre-to-centre spacing (px) between hand cards so the visible ones fit
+   * the middle HAND_MAX_FRACTION of the screen; extra cards scroll past it. */
+  private handStepPx(total: number): number {
+    const slots = Math.min(total, MAX_VISIBLE_HAND);
+    if (slots <= 1) return 0;
+    const cardW = HAND_CARD_U * this.u();
+    const fit = (HAND_MAX_FRACTION * this.viewport().w - cardW) / (slots - 1);
+    const natural = cardW * 0.52; // comfortable overlap when the hand is small
+    return Math.max(Math.min(natural, fit), cardW * 0.14);
+  }
+
+  /** Per-card transform: horizontal slot, a slight downward arc, and fan tilt. */
+  protected handCardTransform(i: number, total: number): string {
+    const centre = (total - 1) / 2;
+    const dx = (i - centre) * this.handStepPx(total);
+    const dy = (i - centre) ** 2 * 0.045 * this.u();
+    const rot = (i - centre) * Math.min(MAX_FAN_STEP_DEG, FAN_SPREAD_DEG / Math.max(total, 1));
+    return `translate(calc(-50% + ${dx.toFixed(1)}px), ${dy.toFixed(1)}px) rotate(${rot.toFixed(2)}deg)`;
+  }
+
+  /** CSS transform panning the fanned hand by any wheel-scroll shift. */
   protected handTransform(): string {
-    return `translateX(calc(-50% + ${this.handScroll()}px))`;
+    return `translateX(${this.handScroll()}px)`;
   }
 
   /**
    * Wheel over the hand scrolls it sideways (deltaY → horizontal), so a hand
-   * too wide to fit can be panned to reveal cards clipped past the edges.
+   * with more than MAX_VISIBLE_HAND cards can be panned to reveal the rest,
+   * which are otherwise clipped past the middle-50% window.
    */
   protected onHandWheel(event: WheelEvent): void {
-    const el = this.handEl()?.nativeElement;
-    if (!el) return;
-    const overflow = el.offsetWidth - window.innerWidth + HAND_SCROLL_MARGIN_PX;
+    const total = this.zones.mine().hand.length;
+    const cardW = HAND_CARD_U * this.u();
+    const full = cardW + Math.max(total - 1, 0) * this.handStepPx(total);
+    const overflow = full - HAND_MAX_FRACTION * this.viewport().w;
     if (overflow <= 0) {
       if (this.handScroll() !== 0) this.handScroll.set(0);
       return;
@@ -197,15 +248,51 @@ export class Zones implements OnDestroy {
     return el instanceof Element && !!el.closest(ZONE_SELECTORS[kind]);
   }
 
+  // ---------- life ----------
+
+  protected chooseLife(n: number): void {
+    this.zones.setLife(n);
+  }
+
+  protected bumpLife(delta: number): void {
+    const life = this.zones.mine().life;
+    if (life === null) return;
+    this.zones.setLife(Math.max(0, life + delta));
+  }
+
+  // ---------- revealing my hand ----------
+
+  /** Reveal or hide my whole hand at once (the toggle overrides per-card state). */
+  protected revealAll(): void {
+    this.zones.revealHand(!this.allRevealed());
+  }
+
+  protected openHandMenu(event: MouseEvent, card: ZoneCard): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const host = (event.currentTarget as HTMLElement).closest('app-zones')!;
+    const rect = host.getBoundingClientRect();
+    this.handMenu.set({ card, x: event.clientX - rect.left, y: event.clientY - rect.top });
+  }
+
+  protected toggleRevealCard(): void {
+    const menu = this.handMenu();
+    this.handMenu.set(null);
+    if (menu) this.zones.toggleReveal(menu.card.id);
+  }
+
+  // ---------- dragging cards out of a zone ----------
+
   /**
-   * Press on a hand card: arm a play drag. The card only leaves the hand once
-   * the cursor travels past the threshold (an accidental click does nothing);
-   * the drag itself is then handed to CardInteractions like any table drag.
+   * Press on a card in my hand (source 'hand') or in an open zone I'm examining
+   * (source that zone): arm a drag. The card only leaves once the cursor travels
+   * past the threshold — an accidental click does nothing — and the drag is then
+   * handed to CardInteractions like any table drag.
    */
-  protected startDrag(event: PointerEvent, card: ZoneCard): void {
+  protected startDrag(event: PointerEvent, card: ZoneCard, source: 'hand' | ZoneKind = 'hand'): void {
     if (event.button !== 0) return;
     event.preventDefault(); // no native image drag / text selection
-    this.pendingDrag = { card, x: event.clientX, y: event.clientY };
+    this.pendingDrag = { card, x: event.clientX, y: event.clientY, source };
     // Manual listeners (not host bindings): document-wide pointermove is only
     // interesting for the few frames between press and drag hand-off.
     document.addEventListener('pointermove', this.onPendingDragMove);
@@ -219,7 +306,8 @@ export class Zones implements OnDestroy {
       return;
     }
     this.clearPendingDrag();
-    this.beginPlay(pending.card, event);
+    if (pending.source === 'hand') this.beginPlay(pending.card, event);
+    else this.beginZoneDrag(pending.card, pending.source, event);
   };
 
   private readonly onPendingDragEnd = (): void => {
@@ -263,6 +351,37 @@ export class Zones implements OnDestroy {
     });
   }
 
+  /**
+   * Drag a card out of one of my open zones (graveyard/exile) onto the table or
+   * another zone. The examine dialog closes so the table and zone widgets are
+   * reachable; releasing over the table commits (a history line), over a zone
+   * widget routes it there (that zone logs the move), and a miss or Escape puts
+   * the card back where it came from.
+   */
+  private beginZoneDrag(card: ZoneCard, kind: ZoneKind, event: PointerEvent): void {
+    this.examining.set(null);
+    const taken = this.zones.removeFromZone(kind, card.id);
+    if (!taken) return;
+    const id = newCardId();
+    this.cards.add({
+      id,
+      name: taken.name,
+      src: taken.src || (this.db.lookup(taken.name)?.src ?? ''),
+      position: [0, DRAG_Y, 0],
+      yaw: this.room.seatYaw(),
+      faceUp: true,
+      tapped: false,
+      relatedIds: [],
+    });
+    this.interactions.beginDragFromHand(id, event, {
+      commit: () => this.room.sendAction(`put ${taken.name} onto the table`),
+      revert: () => {
+        this.cards.remove(id);
+        this.zones.addCard(kind, taken);
+      },
+    });
+  }
+
   protected openMenu(event: MouseEvent, kind: Exclude<ZoneKind, 'hand'>): void {
     event.preventDefault();
     event.stopPropagation();
@@ -291,10 +410,10 @@ export class Zones implements OnDestroy {
     if (open) this.zones.takeToHand(open.kind, card.id);
   }
 
-  /** Close the pile menu when clicking anywhere outside it. */
+  /** Close the open pile / hand menus when clicking anywhere outside them. */
   protected onDocumentPointerDown(event: PointerEvent): void {
-    if (!(event.target instanceof Element) || !event.target.closest('.zone-menu')) {
-      this.menu.set(null);
-    }
+    const el = event.target instanceof Element ? event.target : null;
+    if (!el || !el.closest('.zone-menu')) this.menu.set(null);
+    if (!el || !el.closest('.hand-menu')) this.handMenu.set(null);
   }
 }
