@@ -22,11 +22,10 @@ const FRONT_EMISSIVE_HOVER = 1.28;
  * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.75 brings a card
  * down to 0.48 × 0.67 m — well above true proportion, chosen for readability on
  * the (oversized, 4 × 6 m) table under the fixed orthographic camera, where it
- * works out to roughly 122 × 170 CSS px on a 1080p screen. This width matches
- * the DOM drag ghost (`.drag-ghost` in zones.scss, 6.38 --u), so a card keeps
- * its size when picked up and when it lands (stabilityandimprovements.md
- * "card sizes"): 0.635 · 0.75 / 4.2 (VIEW_HEIGHT) = 11.34% of the viewport
- * height = 6.38 --u at 16:9 and wider.
+ * works out to roughly 122 × 170 CSS px on a 1080p screen (0.635 · 0.75 / 4.2
+ * (VIEW_HEIGHT) = 11.34% of the viewport height = 6.38 --u at 16:9 and wider).
+ * A dragged card stays this same 3D instance (no stand-in), so its size and
+ * tapped pose never change while it is picked up (moreimprovements.md).
  */
 const CARD_SCALE = 0.75;
 
@@ -74,15 +73,6 @@ export class Card implements OnDestroy {
       const id = this.state().id;
       this.applyHover(this.interactions.hoveredId() === id || this.interactions.isSelected(id));
     });
-    // While a DOM "ghost" stands in for this card (a lone card being dragged),
-    // hide its 3D instance: the ghost follows the cursor on top of everything,
-    // so the dragged card never disappears behind the hand or pile UI. A whole
-    // selection being dragged has no ghost and stays visible in the scene.
-    // Local-only — remote players never receive the drag preview.
-    effect(() => {
-      const ghosted = this.interactions.dragGhost()?.id === this.state().id;
-      if (this.instance) this.instance.visible = !ghosted;
-    });
   }
 
   ngOnDestroy(): void {
@@ -112,9 +102,6 @@ export class Card implements OnDestroy {
       wrapper.scale.setScalar(CARD_SCALE);
       this.instance = wrapper;
       const state = untracked(this.state);
-      // A card spawned already mid-drag (played from the hand) shows as the DOM
-      // ghost, not here, until the drop lands.
-      wrapper.visible = untracked(this.interactions.dragGhost)?.id !== state.id;
       this.applyPose(state.position, state.yaw, state.faceUp, state.tapped);
       this.graph.root.add(wrapper);
       this.interactions.register(state.id, wrapper);
@@ -217,8 +204,7 @@ export class Card implements OnDestroy {
       this.frontMaterial.color.setHex(0x000000);
       this.frontMaterial.emissive.setHex(0xffffff);
       const id = untracked(this.state).id;
-      const hovered =
-        this.interactions.hoveredId() === id || this.interactions.isSelected(id);
+      const hovered = this.interactions.hoveredId() === id || this.interactions.isSelected(id);
       this.frontMaterial.emissiveIntensity = hovered ? FRONT_EMISSIVE_HOVER : FRONT_EMISSIVE;
       this.frontMaterial.needsUpdate = true;
     } catch (err) {

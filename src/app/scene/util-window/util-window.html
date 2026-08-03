@@ -49,16 +49,15 @@
       } @else {
         @for (hit of results(); track hit.src) {
           <figure class="hit">
-            <img [src]="hit.src" [alt]="hit.name" [title]="hit.name" crossorigin="anonymous" />
-            <div class="actions">
-              <button type="button" title="Add to the table" (click)="addToTable(hit)">
-                Table
-              </button>
-              <button type="button" title="Add to your hand" (click)="addToHand(hit)">Hand</button>
-              <button type="button" title="Put on top of your deck" (click)="addToDeck(hit)">
-                Deck
-              </button>
-            </div>
+            <!-- Drag it out: onto the table, or onto the hand/deck/grave/exile widgets. -->
+            <img
+              [src]="hit.src"
+              [alt]="hit.name"
+              [title]="'Drag ' + hit.name + ' onto the table or one of your piles'"
+              crossorigin="anonymous"
+              draggable="false"
+              (pointerdown)="dragHit($event, hit)"
+            />
           </figure>
         } @empty {
           <p class="status">

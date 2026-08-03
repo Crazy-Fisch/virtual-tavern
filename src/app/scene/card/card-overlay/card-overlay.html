@@ -55,14 +55,28 @@
       <button type="button" class="x" aria-label="Close" (click)="closeRelated()">×</button>
     </header>
     <div class="thumbs">
-      @for (card of r.cards; track card.id) {
-        <img
-          [src]="card.src"
-          [alt]="card.name"
-          [title]="card.name"
-          crossorigin="anonymous"
-          (click)="view(card.id)"
-        />
+      @for (card of r.cards; track card.name) {
+        @if (card.src) {
+          <img
+            [src]="card.src"
+            [alt]="card.name"
+            [title]="'Drag ' + card.name + ' onto the table — click to view'"
+            crossorigin="anonymous"
+            draggable="false"
+            (pointerdown)="dragRelated($event, card)"
+            (click)="viewRelated(card)"
+          />
+        } @else {
+          <!-- Name the card database can't resolve (yet): still draggable. -->
+          <button
+            type="button"
+            class="thumb-missing"
+            [title]="'Drag ' + card.name + ' onto the table'"
+            (pointerdown)="dragRelated($event, card)"
+          >
+            {{ card.name }}
+          </button>
+        }
       } @empty {
         <p class="empty">No related cards.</p>
       }
@@ -72,6 +86,12 @@
 
 @if (viewCard(); as card) {
   <app-dialog [heading]="card.name" [fit]="true" (close)="closeView()">
+    <img class="view-img" [src]="card.src" [alt]="card.name" crossorigin="anonymous" />
+  </app-dialog>
+}
+
+@if (relatedView(); as card) {
+  <app-dialog [heading]="card.name" [fit]="true" (close)="relatedView.set(null)">
     <img class="view-img" [src]="card.src" [alt]="card.name" crossorigin="anonymous" />
   </app-dialog>
 }

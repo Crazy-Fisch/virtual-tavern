@@ -43,7 +43,8 @@ describe('CardInteractions', () => {
       yaw: 0,
       faceUp: true,
       tapped: false,
-      relatedIds: [],
+      relatedNames: [],
+      ownerUid: 'user-1',
     });
     room.actions.length = 0; // only assert on actions triggered by the test itself
     canvas = document.createElement('canvas');
@@ -258,13 +259,15 @@ describe('CardInteractions', () => {
       interactions.unregisterDropTarget(target);
     });
 
-    it('exposes a cursor-following drag ghost while dragging and clears it on drop', () => {
+    it('a lone dragged card stays its 3D instance, floating at the drag height', () => {
       down(screenAt(0, 0.5, 0));
       move(screenAt(2, 0, 1));
-      expect(interactions.dragGhost()).not.toBeNull();
-      expect(interactions.dragGhost()!.src).toBe('https://example.com/worm.jpg');
+      // Same in-scene drag style as a group: the card previews at DRAG_Y with
+      // its state (size, tapped pose) untouched — no DOM stand-in.
+      const dragged = store.card(cardId)!;
+      expect(dragged.position[1]).toBeCloseTo(0.5, 3); // DRAG_Y
+      expect(dragged.position[0]).toBeCloseTo(2, 3);
       up(screenAt(2, 0, 1));
-      expect(interactions.dragGhost()).toBeNull();
     });
 
     it('a drag released where the ray hits nothing snaps the card back', () => {
@@ -289,7 +292,8 @@ describe('CardInteractions', () => {
         yaw: 0,
         faceUp: true,
         tapped: false,
-        relatedIds: [],
+        relatedNames: [],
+        ownerUid: 'user-1',
       });
       const hooks = { commit: vi.fn(), revert: vi.fn() };
       interactions.beginDragFromHand(
@@ -352,6 +356,64 @@ describe('CardInteractions', () => {
       expect(interactions.draggingId()).toBeNull();
     });
 
+    it('a search hit dragged past the threshold spawns local-only and commits on the table', () => {
+      const onStart = vi.fn();
+      interactions.armSpawnCardDrag(
+        new MouseEvent('pointerdown', { button: 0, clientX: 5, clientY: 5 }) as PointerEvent,
+        { name: 'Goblin Token', src: 'https://img/goblin.jpg', related: [] },
+        onStart,
+      );
+      expect(store.cards()).toHaveLength(1); // press hasn't travelled: nothing yet
+      const at = screenAt(2, 0, 1);
+      move(at);
+      expect(onStart).toHaveBeenCalledOnce();
+      const spawned = store.cards().find((c) => c.name === 'Goblin Token')!;
+      expect(spawned).toBeDefined();
+      expect(room.worldState()[spawned.id]).toBeUndefined(); // local-only mid-drag
+      up(at);
+      expect(room.worldState()[spawned.id]).toBeDefined();
+      expect(store.card(spawned.id)!.ownerUid).toBe('user-1');
+      expect(room.actions).toEqual(['added Goblin Token']);
+    });
+
+    it('a spawned search hit released off the table is discarded without a trace', () => {
+      interactions.armSpawnCardDrag(
+        new MouseEvent('pointerdown', { button: 0, clientX: 5, clientY: 5 }) as PointerEvent,
+        { name: 'Goblin Token', src: 'https://img/goblin.jpg' },
+      );
+      const offTable = screenAt(15, 0, 15); // beyond the 20×20 surface
+      move(offTable);
+      up(offTable);
+      expect(store.cards().find((c) => c.name === 'Goblin Token')).toBeUndefined();
+      expect(room.actions).toEqual([]);
+    });
+
+    it('the U hotkey untaps my tapped cards and leaves other players’ alone', () => {
+      const foreignId = newCardId();
+      store.add({
+        id: foreignId,
+        name: 'Foreign',
+        src: '',
+        position: [3, 0.5, 0],
+        yaw: 0,
+        faceUp: true,
+        tapped: true,
+        relatedNames: [],
+        ownerUid: 'user-2',
+      });
+      store.update(cardId, { tapped: true });
+      room.actions.length = 0;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true }));
+      expect(store.card(cardId)!.tapped).toBe(false);
+      expect(store.card(foreignId)!.tapped).toBe(true);
+      expect(room.actions).toEqual(['untapped all their cards']);
+    });
+
+    it('untap-all with nothing of mine tapped posts no history line', () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true }));
+      expect(room.actions).toEqual([]);
+    });
+
     /**
      * A pickable object at a world position, standing in for a rendered
      * card/item. Returned so a test can move it where the real component would
@@ -377,7 +439,8 @@ describe('CardInteractions', () => {
         yaw: 0,
         faceUp: true,
         tapped: false,
-        relatedIds: [],
+        relatedNames: [],
+        ownerUid: 'user-1',
       });
       registerObject(id, position);
       return id;
@@ -418,7 +481,6 @@ describe('CardInteractions', () => {
         const target = screenAt(2, 0, 1);
         down(screenAt(0, 0.5, 0));
         move(target);
-        expect(interactions.dragGhost()).toBeNull(); // a group stays 3D, no ghost
         up(target);
         const moved = store.card(cardId)!;
         const follower = store.card(second)!;

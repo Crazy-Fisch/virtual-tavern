@@ -29,23 +29,30 @@ describe('CardSearchService', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('maps hits to name + image, using the first face for double-faced cards', async () => {
+  it('maps hits to name + image + related, using the first face for double-faced cards', async () => {
     fetchMock.mockResolvedValue(
       scryfallResponse(200, {
         data: [
-          { name: 'Water Worm', image_uris: { normal: 'https://img/worm.jpg' } },
+          {
+            name: 'Water Worm',
+            image_uris: { normal: 'https://img/worm.jpg' },
+            // all_parts includes the card itself — only the others are related.
+            all_parts: [{ name: 'Water Worm' }, { name: 'Worm Token' }],
+          },
           { name: 'Delver', card_faces: [{ image_uris: { normal: 'https://img/delver.jpg' } }] },
           { name: 'No Image' },
         ],
       }),
     );
     expect(await service.search('worm')).toEqual([
-      { name: 'Water Worm', src: 'https://img/worm.jpg' },
-      { name: 'Delver', src: 'https://img/delver.jpg' },
+      { name: 'Water Worm', src: 'https://img/worm.jpg', related: ['Worm Token'] },
+      { name: 'Delver', src: 'https://img/delver.jpg', related: [] },
     ]);
-    // The query goes to the deposited API, not any baked-in endpoint.
+    // The query goes to the deposited API, not any baked-in endpoint — and asks
+    // for extras, so tokens show up in the results (moreimprovements.md).
     expect(fetchMock.mock.calls[0]![0]).toContain('https://api.example.com/cards/search');
     expect(fetchMock.mock.calls[0]![0]).toContain('q=worm');
+    expect(fetchMock.mock.calls[0]![0]).toContain('include_extras=true');
   });
 
   it('refuses to search while no API has been deposited (legal.md)', async () => {

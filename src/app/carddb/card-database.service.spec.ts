@@ -103,6 +103,14 @@ const BULK = JSON.stringify([
     name: 'Delver of Secrets // Insectile Aberration',
     card_faces: [{ image_uris: { normal: 'https://img/delver.jpg' } }, {}],
   },
+  // Related cards: all_parts names (minus the card itself) are kept, and the
+  // token they point at is an ordinary card object that indexes like any other.
+  {
+    name: 'Wormcaller',
+    image_uris: { normal: 'https://img/wormcaller.jpg' },
+    all_parts: [{ name: 'Wormcaller' }, { name: 'Worm Token' }],
+  },
+  { name: 'Worm Token', image_uris: { normal: 'https://img/worm-token.jpg' } },
   { object: 'card' }, // nameless junk is skipped
 ]);
 
@@ -165,8 +173,11 @@ describe('CardDatabaseService', () => {
     });
     expect(service.lookup('Delver of Secrets')!.src).toBe('https://img/delver.jpg');
     expect(service.lookup('No Such Card')).toBeUndefined();
+    // Related names (all_parts minus self) resolve, incl. the token they name.
+    expect(service.lookup('Wormcaller')!.related).toEqual(['Worm Token']);
+    expect(service.lookup('Worm Token')!.src).toBe('https://img/worm-token.jpg');
     expect(service.progress()).toBe(1);
-    expect(cache.store.has('index:v2:https://api.example.com')).toBe(true);
+    expect(cache.store.has('index:v3:https://api.example.com')).toBe(true);
   });
 
   it('indexes a JSON Lines export offered via jsonl_download_uri', async () => {
@@ -209,7 +220,7 @@ describe('CardDatabaseService', () => {
     const index: Record<string, CardRecord> = {
       'cached card': { name: 'Cached Card', src: 'https://img/cached.jpg' },
     };
-    cache.store.set('index:v2:https://api.example.com', index);
+    cache.store.set('index:v3:https://api.example.com', index);
     const fetchMock = stubApi();
     init();
     apiUrl.set('https://api.example.com');
@@ -217,6 +228,20 @@ describe('CardDatabaseService', () => {
     expect(service.cardCount()).toBe(1);
     expect(service.lookup('Cached Card')).toEqual(index['cached card']);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a pre-related (v2) index is rebuilt and its cache entry dropped', async () => {
+    cache.store.set('index:v2:https://api.example.com', {
+      'stale card': { name: 'Stale Card', src: 'https://img/stale.jpg' },
+    });
+    const fetchMock = stubApi();
+    init();
+    apiUrl.set('https://api.example.com');
+    await vi.waitFor(() => expect(service.status()).toBe('ready'));
+    expect(fetchMock).toHaveBeenCalled(); // the old index did not satisfy v3
+    expect(cache.store.has('index:v2:https://api.example.com')).toBe(false);
+    expect(cache.store.has('index:v3:https://api.example.com')).toBe(true);
+    expect(service.lookup('Stale Card')).toBeUndefined();
   });
 
   it('reports an error status when the API cannot provide the data, app keeps working', async () => {

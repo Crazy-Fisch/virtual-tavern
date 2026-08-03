@@ -24,8 +24,17 @@ export interface CardState {
   faceUp: boolean;
   /** Tapped (turned a quarter turn, rendered on top of yaw). Toggled by clicking. */
   tapped: boolean;
-  /** ids of other cards in the store shown by the "related" menu option. */
-  relatedIds: string[];
+  /**
+   * Names of this card's related cards (tokens it creates, meld results, …)
+   * from the card data's all_parts; the "related" menu resolves them to images
+   * via the card database.
+   */
+  relatedNames: string[];
+  /**
+   * Auth uid of the player who put the card onto the table — "untap all" only
+   * touches your own cards. '' on cards from before this field existed.
+   */
+  ownerUid: string;
 }
 
 /** Actions offered by the card context menu and hotkeys. */

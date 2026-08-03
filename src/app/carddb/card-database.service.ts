@@ -4,8 +4,15 @@ import { CardDbCache } from './card-db-cache';
 import { JsonChunkParser } from './json-chunk-parser';
 
 /** Cache key of the compact index, per deposited API base URL — changing the
- * deposit therefore loads (or downloads) that API's own index. */
+ * deposit therefore loads (or downloads) that API's own index. v3 added the
+ * per-card related names (all_parts), so older indexes must be rebuilt. */
 function indexKey(base: string): string {
+  return `index:v3:${base}`;
+}
+
+/** Key the same base's index was cached under before related names existed;
+ * superseded, so it is deleted when the v3 index is (re)built. */
+function staleIndexKey(base: string): string {
   return `index:v2:${base}`;
 }
 
@@ -14,12 +21,15 @@ function indexKey(base: string): string {
 const LEGACY_INDEX_KEY =
   'index:v1:https://data.scryfall.io/default-cards/default-cards-20260719091104.json';
 
-/** What the database keeps per card: enough to resolve a decklist name to art. */
+/** What the database keeps per card: enough to resolve a decklist name to art,
+ * plus the names of its related cards (tokens it creates, meld results, …). */
 export type CardRecord = {
   /** Canonical card name, e.g. "Fire // Ice". */
   name: string;
   /** Front-face image URL, '' when the card has no image. */
   src: string;
+  /** Related card names from the card data's all_parts; absent when none. */
+  related?: string[];
 };
 
 export type CardDbStatus = 'idle' | 'downloading' | 'ready' | 'error';
@@ -28,7 +38,21 @@ type BulkCard = {
   name?: string;
   image_uris?: { normal?: string };
   card_faces?: { image_uris?: { normal?: string } }[];
+  all_parts?: { name?: string }[];
 };
+
+/**
+ * Names a card object is related to — its `all_parts` minus itself, deduped.
+ * Shared with CardSearchService: bulk-file cards and search hits carry the
+ * same shape (moreimprovements.md "related cards").
+ */
+export function relatedNamesOf(card: { name?: string; all_parts?: { name?: string }[] }): string[] {
+  const names = new Set<string>();
+  for (const part of card.all_parts ?? []) {
+    if (part.name && part.name !== card.name) names.add(part.name);
+  }
+  return [...names];
+}
 
 /** The API's bulk-data listing (`GET {base}/bulk-data`, Scryfall-compatible).
  * Either export link works — the parser reads arrays and JSON Lines alike. */
@@ -48,10 +72,7 @@ function startsWith(head: Uint8Array, magic: readonly number[]): boolean {
 /** Gzip inflation as a pipeThrough stage. The cast bridges TS's DOM types,
  * whose BufferSource writable side pipeThrough's invariant generics reject. */
 function gunzip(): ReadableWritablePair<Uint8Array, Uint8Array> {
-  return new DecompressionStream('gzip') as unknown as ReadableWritablePair<
-    Uint8Array,
-    Uint8Array
-  >;
+  return new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>;
 }
 
 /**
@@ -165,6 +186,7 @@ export class CardDatabaseService {
       if (signal.aborted) return;
       this.adopt(index);
       await this.cache.put(indexKey(base), index).catch(() => undefined); // best-effort
+      await this.cache.delete(staleIndexKey(base)); // superseded pre-related index
     } catch (err) {
       if (signal.aborted) return;
       console.warn('[carddb] Card database unavailable.', err);
@@ -178,10 +200,7 @@ export class CardDatabaseService {
     this.status.set('ready');
   }
 
-  private async download(
-    base: string,
-    signal: AbortSignal,
-  ): Promise<Record<string, CardRecord>> {
+  private async download(base: string, signal: AbortSignal): Promise<Record<string, CardRecord>> {
     // Ask the API where its "default cards" bulk export lives, then stream it.
     const listing = await fetch(`${base}/bulk-data`, { signal });
     if (!listing.ok) throw new Error(`Bulk data listing failed (${listing.status})`);
@@ -237,20 +256,26 @@ export class CardDatabaseService {
 
   /**
    * Index one card object. The bulk file holds every printing; the first one
-   * with an image wins per name. Double-faced names ("A // B") also resolve
-   * by their front face, since decklists usually carry only that.
+   * with an image wins per name, and the first that knows its related parts
+   * contributes those (all_parts is per printing — many carry none). Tokens
+   * are ordinary card objects in the bulk file and index like any other, which
+   * is what lets related names resolve to an image. Double-faced names
+   * ("A // B") also resolve by their front face, since decklists usually carry
+   * only that — the front key shares the record, so later merges reach both.
    */
   private add(index: Record<string, CardRecord>, card: BulkCard): void {
     if (!card.name) return;
     const src = card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? '';
+    const related = relatedNamesOf(card);
     const key = card.name.toLowerCase();
-    const existing = index[key];
-    if (!existing) index[key] = { name: card.name, src };
-    else if (!existing.src && src) existing.src = src;
+    let record = index[key];
+    if (!record) record = index[key] = { name: card.name, src };
+    else if (!record.src && src) record.src = src;
+    if (related.length && !record.related?.length) record.related = related;
     const front = card.name.split(' // ')[0]!;
     if (front !== card.name) {
       const frontKey = front.toLowerCase();
-      if (!index[frontKey]) index[frontKey] = { name: card.name, src };
+      if (!index[frontKey]) index[frontKey] = record;
     }
   }
 }

@@ -32,104 +32,181 @@
 </div>
 
 @if (dialog() === 'auth') {
-  <app-dialog heading="Sign in" (close)="closeDialog()">
-    <form class="form" (submit)="$event.preventDefault(); signIn()">
-      <label>
-        Email
-        <input [(ngModel)]="email" name="email" type="email" autocomplete="email" />
-      </label>
-      <label>
-        Password
-        <input
-          [(ngModel)]="password"
-          name="password"
-          type="password"
-          autocomplete="current-password"
-        />
-      </label>
-      <label>
-        Username <span class="optional">(new account)</span>
-        <input
-          [(ngModel)]="username"
-          name="username"
-          placeholder="e.g. Tavernkeeper"
-          maxlength="16"
-          autocomplete="username"
-        />
-      </label>
-      @if (error(); as err) {
-        <p class="error">{{ err }}</p>
-      }
-      <button class="primary" type="submit" [disabled]="busy() || !email().trim() || !password()">
+  <app-dialog [heading]="authTab() === 'signin' ? 'Sign in' : 'Sign up'" (close)="closeDialog()">
+    <div class="tabs" role="tablist">
+      <button
+        type="button"
+        class="tab"
+        role="tab"
+        [class.active]="authTab() === 'signin'"
+        (click)="showAuthTab('signin')"
+      >
         Sign in
       </button>
       <button
-        class="btn"
         type="button"
-        [disabled]="busy() || !email().trim() || !password() || !username().trim()"
-        (click)="signUp()"
+        class="tab"
+        role="tab"
+        [class.active]="authTab() === 'signup'"
+        (click)="showAuthTab('signup')"
       >
-        Create account
+        Sign up
       </button>
-      <div class="divider">or</div>
-      <button class="btn" type="button" [disabled]="busy()" (click)="continueAsGuest()">
-        Continue as guest
-      </button>
-    </form>
+    </div>
+    @if (authTab() === 'signin') {
+      <form class="form" (submit)="$event.preventDefault(); signIn()">
+        <label>
+          Email
+          <input [(ngModel)]="email" name="email" type="email" autocomplete="email" />
+        </label>
+        <label>
+          Password
+          <input
+            [(ngModel)]="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+          />
+        </label>
+        @if (error(); as err) {
+          <p class="error">{{ err }}</p>
+        }
+        <button class="primary" type="submit" [disabled]="busy() || !email().trim() || !password()">
+          Sign in
+        </button>
+        <div class="divider">or</div>
+        <button class="btn" type="button" [disabled]="busy()" (click)="continueAsGuest()">
+          Continue as guest
+        </button>
+      </form>
+    } @else {
+      <form class="form" (submit)="$event.preventDefault(); signUp()">
+        <label>
+          Email
+          <input [(ngModel)]="email" name="email" type="email" autocomplete="email" />
+        </label>
+        <label>
+          Password
+          <input
+            [(ngModel)]="password"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+          />
+        </label>
+        <label>
+          Username
+          <input
+            [(ngModel)]="username"
+            name="username"
+            placeholder="e.g. Tavernkeeper"
+            maxlength="16"
+            autocomplete="username"
+          />
+        </label>
+        @if (error(); as err) {
+          <p class="error">{{ err }}</p>
+        }
+        <button
+          class="primary"
+          type="submit"
+          [disabled]="busy() || !email().trim() || !password() || !username().trim()"
+        >
+          Create account
+        </button>
+        <div class="divider">or</div>
+        <button class="btn" type="button" [disabled]="busy()" (click)="continueAsGuest()">
+          Continue as guest
+        </button>
+      </form>
+    }
   </app-dialog>
 }
 
 @if (dialog() === 'play') {
   <app-dialog heading="Play" (close)="closeDialog()">
-    <form class="form" (submit)="$event.preventDefault(); joinRoom()">
-      <!-- Registered players play under their username; only guests type a name. -->
-      @if (supabase.isGuest()) {
-        <label>
-          Display name
-          <input [(ngModel)]="name" name="name" placeholder="guest" maxlength="16" />
-        </label>
-      } @else {
-        <p class="who-play">
-          Playing as <strong>{{ supabase.displayName() }}</strong>
-        </p>
-      }
-      <label>
-        Room code
-        <input
-          class="code"
-          [(ngModel)]="joinCode"
-          name="joinCode"
-          placeholder="e.g. ABC123"
-          maxlength="6"
-          autocomplete="off"
-        />
-      </label>
-      <button class="primary" type="submit" [disabled]="busy() || !joinCode().trim()">
+    <div class="tabs" role="tablist">
+      <button
+        type="button"
+        class="tab"
+        role="tab"
+        [class.active]="playTab() === 'join'"
+        (click)="showPlayTab('join')"
+      >
         Join room
       </button>
-      <div class="divider">or</div>
-      <label>
-        New room name
-        <input
-          [(ngModel)]="roomName"
-          name="roomName"
-          placeholder="e.g. The Cellar"
-          maxlength="40"
-        />
-      </label>
       <button
-        class="btn"
         type="button"
-        [disabled]="busy() || roomName().trim().length < 3"
-        (click)="createRoom()"
+        class="tab"
+        role="tab"
+        [class.active]="playTab() === 'create'"
+        (click)="showPlayTab('create')"
       >
-        Create new room
+        Create room
       </button>
-      @if (error(); as err) {
-        <p class="error">{{ err }}</p>
-      }
-      <p class="hint">Share the room code with friends to meet in the same world.</p>
-    </form>
+    </div>
+    @if (playTab() === 'join') {
+      <form class="form" (submit)="$event.preventDefault(); joinRoom()">
+        <!-- Registered players play under their username; only guests type a name. -->
+        @if (supabase.isGuest()) {
+          <label>
+            Display name
+            <input [(ngModel)]="name" name="name" placeholder="guest" maxlength="16" />
+          </label>
+        } @else {
+          <p class="who-play">
+            Playing as <strong>{{ supabase.displayName() }}</strong>
+          </p>
+        }
+        <label>
+          Room code
+          <input
+            class="code"
+            [(ngModel)]="joinCode"
+            name="joinCode"
+            placeholder="e.g. ABC123"
+            maxlength="6"
+            autocomplete="off"
+          />
+        </label>
+        @if (error(); as err) {
+          <p class="error">{{ err }}</p>
+        }
+        <button class="primary" type="submit" [disabled]="busy() || !joinCode().trim()">
+          Join room
+        </button>
+        <p class="hint">Ask a friend for their room code to meet at the same table.</p>
+      </form>
+    } @else {
+      <form class="form" (submit)="$event.preventDefault(); createRoom()">
+        @if (supabase.isGuest()) {
+          <label>
+            Display name
+            <input [(ngModel)]="name" name="name" placeholder="guest" maxlength="16" />
+          </label>
+        } @else {
+          <p class="who-play">
+            Playing as <strong>{{ supabase.displayName() }}</strong>
+          </p>
+        }
+        <label>
+          Room name
+          <input
+            [(ngModel)]="roomName"
+            name="roomName"
+            placeholder="e.g. The Cellar"
+            maxlength="40"
+          />
+        </label>
+        @if (error(); as err) {
+          <p class="error">{{ err }}</p>
+        }
+        <button class="primary" type="submit" [disabled]="busy() || roomName().trim().length < 3">
+          Create new room
+        </button>
+        <p class="hint">Share the room code with friends to meet in the same world.</p>
+      </form>
+    }
   </app-dialog>
 }
 

@@ -1,4 +1,12 @@
-import { Component, OnDestroy, effect, inject, input, untracked } from '@angular/core';
+import {
+  Component,
+  OnDestroy,
+  afterNextRender,
+  effect,
+  inject,
+  input,
+  untracked,
+} from '@angular/core';
 import {
   Box3,
   BufferGeometry,
@@ -104,7 +112,9 @@ export class Item implements OnDestroy {
   private destroyed = false;
 
   constructor() {
-    void this.spawn();
+    // Not in the constructor body itself: spawn() reads the required `state`
+    // input synchronously, which is only bound after construction (NG0950).
+    afterNextRender(() => void this.spawn());
     // Position: world, or an offset from the card a counter is attached to.
     effect(() => {
       const { position, attachedTo } = this.state();

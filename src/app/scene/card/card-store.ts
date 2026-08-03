@@ -14,9 +14,10 @@ function toCard(id: string, data: WorldObjectData): CardState {
     yaw: typeof data['yaw'] === 'number' ? data['yaw'] : 0,
     faceUp: data['faceUp'] !== false,
     tapped: data['tapped'] === true,
-    relatedIds: Array.isArray(data['relatedIds'])
-      ? (data['relatedIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
+    relatedNames: Array.isArray(data['relatedNames'])
+      ? (data['relatedNames'] as unknown[]).filter((x): x is string => typeof x === 'string')
       : [],
+    ownerUid: typeof data['ownerUid'] === 'string' ? data['ownerUid'] : '',
   };
 }
 
@@ -108,10 +109,9 @@ export class CardStore {
   }
 
   /**
-   * Delete the card from the shared state. Dangling relatedIds in other cards
-   * are tolerated — lookups resolve them to undefined and filter them out.
-   * A card that never left this client (addLocal, e.g. a reverted hand play)
-   * is simply discarded — the network never saw it.
+   * Delete the card from the shared state. A card that never left this client
+   * (addLocal, e.g. a reverted hand play) is simply discarded — the network
+   * never saw it.
    */
   remove(id: string): void {
     this.clearPreview(id);

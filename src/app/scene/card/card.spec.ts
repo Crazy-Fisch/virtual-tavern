@@ -42,7 +42,8 @@ const baseState = (): CardState => ({
   yaw: 0,
   faceUp: true,
   tapped: false,
-  relatedIds: [],
+  relatedNames: [],
+  ownerUid: 'user-1',
 });
 
 describe('Card', () => {

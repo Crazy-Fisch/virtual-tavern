@@ -289,7 +289,11 @@ export class Zones implements OnDestroy {
    * past the threshold — an accidental click does nothing — and the drag is then
    * handed to CardInteractions like any table drag.
    */
-  protected startDrag(event: PointerEvent, card: ZoneCard, source: 'hand' | ZoneKind = 'hand'): void {
+  protected startDrag(
+    event: PointerEvent,
+    card: ZoneCard,
+    source: 'hand' | ZoneKind = 'hand',
+  ): void {
     if (event.button !== 0) return;
     event.preventDefault(); // no native image drag / text selection
     this.pendingDrag = { card, x: event.clientX, y: event.clientY, source };
@@ -342,7 +346,8 @@ export class Zones implements OnDestroy {
       yaw: this.room.seatYaw(),
       faceUp: true,
       tapped: false,
-      relatedIds: [],
+      relatedNames: this.db.lookup(taken.name)?.related ?? [],
+      ownerUid: this.room.userId() ?? '',
     });
     this.interactions.beginDragFromHand(id, event, {
       commit: () => this.room.sendAction(`played ${taken.name}`),
@@ -373,7 +378,8 @@ export class Zones implements OnDestroy {
       yaw: this.room.seatYaw(),
       faceUp: true,
       tapped: false,
-      relatedIds: [],
+      relatedNames: this.db.lookup(taken.name)?.related ?? [],
+      ownerUid: this.room.userId() ?? '',
     });
     this.interactions.beginDragFromHand(id, event, {
       commit: () => this.room.sendAction(`put ${taken.name} onto the table`),

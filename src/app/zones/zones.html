@@ -99,13 +99,17 @@
         <button type="button" class="life-btn" title="Gain 1 life" (click)="bumpLife(1)">+</button>
       </div>
     }
+    <button type="button" class="reveal-toggle" [class.on]="allRevealed()" (click)="revealAll()">
+      {{ allRevealed() ? 'Hide hand' : 'Reveal hand' }}
+    </button>
+    <!-- Turn start: untap every card I own on the table (hotkey U). -->
     <button
       type="button"
-      class="reveal-toggle"
-      [class.on]="allRevealed()"
-      (click)="revealAll()"
+      class="untap-all"
+      title="Untap all your cards (U)"
+      (click)="interactions.untapAll()"
     >
-      {{ allRevealed() ? 'Hide hand' : 'Reveal hand' }}
+      Untap all
     </button>
   </div>
 
@@ -187,16 +191,6 @@
       <p class="db-note">The card database isn’t ready yet — cards may come in without images.</p>
     }
   </app-dialog>
-}
-
-<!-- The dragged card, drawn on top of every overlay so it never hides behind the
-     hand or piles. The 3D card is hidden while this ghost is showing. -->
-@if (interactions.dragGhost(); as g) {
-  <div class="drag-ghost" [style.left.px]="g.x" [style.top.px]="g.y">
-    @if (g.faceUp && g.src) {
-      <img [src]="g.src" alt="" crossorigin="anonymous" draggable="false" />
-    }
-  </div>
 }
 
 @if (examined(); as p) {

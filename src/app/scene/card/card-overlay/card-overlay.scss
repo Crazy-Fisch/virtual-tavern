@@ -110,7 +110,27 @@ app-dialog {
     img {
       width: 64px;
       border-radius: 4px;
-      cursor: pointer;
+      cursor: grab;
+
+      &:hover {
+        outline: 2px solid #fff;
+      }
+    }
+
+    // A related name the card database couldn't resolve to an image: a card-
+    // shaped text tile, draggable like the image thumbs.
+    .thumb-missing {
+      width: 64px;
+      aspect-ratio: 64 / 89;
+      padding: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #ddd;
+      font-size: 0.65rem;
+      line-height: 1.2;
+      overflow: hidden;
+      cursor: grab;
 
       &:hover {
         outline: 2px solid #fff;

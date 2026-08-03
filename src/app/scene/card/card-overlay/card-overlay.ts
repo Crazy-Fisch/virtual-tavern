@@ -1,10 +1,16 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { CardDatabaseService } from '../../../carddb/card-database.service';
 import { Dialog } from '../../../shared/dialog/dialog';
 import { ItemStore } from '../../item/item-store';
 import { ItemAction, isDice } from '../../item/item.types';
-import { CardInteractions } from '../card-interactions';
+import { CardInteractions, SpawnCard } from '../card-interactions';
 import { CardStore } from '../card-store';
 import { CardAction, CardState } from '../card.types';
+
+/** A related-panel entry: a name resolved (best-effort) against the card database. */
+interface RelatedEntry extends SpawnCard {
+  related: string[];
+}
 
 /**
  * DOM-side table-object UI (plain Angular/HTML, not Three): the right-click
@@ -23,6 +29,10 @@ export class CardOverlay {
   protected readonly interactions = inject(CardInteractions);
   private readonly store = inject(CardStore);
   private readonly items = inject(ItemStore);
+  private readonly db = inject(CardDatabaseService);
+
+  /** A related card being viewed large (it has no table card to point at). */
+  protected readonly relatedView = signal<SpawnCard | null>(null);
 
   /** The die or coin whose right-click menu is open, if any. */
   protected readonly itemMenu = computed(() => {
@@ -50,7 +60,12 @@ export class CardOverlay {
     return id ? (this.store.card(id) ?? null) : null;
   });
 
-  /** Related cards of every owner in the panel (a selection contributes all of theirs). */
+  /**
+   * Related cards of every owner in the panel (a selection contributes all of
+   * theirs): the owners' related *names* (from the card data's all_parts),
+   * resolved to images via the card database — tokens are indexed like any
+   * other card. A name the database can't resolve still shows, as a text tile.
+   */
   protected readonly related = computed(() => {
     const anchor = this.interactions.relatedPanel();
     if (!anchor) return null;
@@ -58,10 +73,15 @@ export class CardOverlay {
       .map((id) => this.store.card(id))
       .filter((c): c is CardState => c !== undefined);
     if (owners.length === 0) return null;
-    const ids = new Set(owners.flatMap((owner) => owner.relatedIds));
-    const cards = [...ids]
-      .map((id) => this.store.card(id))
-      .filter((c): c is CardState => c !== undefined);
+    const names = new Set(owners.flatMap((owner) => owner.relatedNames));
+    const cards: RelatedEntry[] = [...names].map((name) => {
+      const record = this.db.lookup(name);
+      return {
+        name: record?.name ?? name,
+        src: record?.src ?? '',
+        related: record?.related ?? [],
+      };
+    });
     return { ...anchor, cards, owners: owners.length };
   });
 
@@ -78,8 +98,14 @@ export class CardOverlay {
     this.interactions.itemAct(itemId, action);
   }
 
-  protected view(cardId: string): void {
-    this.interactions.viewCardId.set(cardId);
+  /** Drag a related card onto the table (or a zone widget); the panel closes
+   * once the drag actually starts, a plain click views the card instead. */
+  protected dragRelated(event: PointerEvent, card: RelatedEntry): void {
+    this.interactions.armSpawnCardDrag(event, card, () => this.closeRelated());
+  }
+
+  protected viewRelated(card: RelatedEntry): void {
+    this.relatedView.set({ name: card.name, src: card.src });
   }
 
   protected closeView(): void {

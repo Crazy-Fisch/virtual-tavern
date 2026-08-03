@@ -7,7 +7,7 @@ import { ItemStore } from '../item/item-store';
 import { ItemAction, ItemState, isItemId, itemLabel } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
 import { CardStore } from './card-store';
-import { CardAction, CardState, GROUP_ACTIONS } from './card.types';
+import { CardAction, CardState, GROUP_ACTIONS, newCardId } from './card.types';
 
 /** Height a card floats at while being moved (tabletop is at y ≈ 0.2). */
 export const DRAG_Y = 0.5;
@@ -88,16 +88,13 @@ export interface CardDropTarget {
   accept(card: CardState): void;
 }
 
-/** The dragged card as drawn by a DOM overlay: a "ghost" following the cursor,
- * on top of every overlay so it never hides behind the hand or pile UI. */
-export interface DragGhost {
-  /** Card the ghost stands in for — that card hides its 3D instance. */
-  id: string;
+/** A card that exists nowhere yet — a search hit or a related-cards entry —
+ * dragged onto the table by name and image. */
+export interface SpawnCard {
+  name: string;
   src: string;
-  faceUp: boolean;
-  /** Cursor position in client coordinates. */
-  x: number;
-  y: number;
+  /** Related names the spawned card should carry (so its own "related" works). */
+  related?: string[];
 }
 
 /**
@@ -165,8 +162,6 @@ export class CardInteractions {
   readonly selectedIds = signal<ReadonlySet<string>>(new Set());
   /** The selection rectangle while it is being dragged, else null. */
   readonly marquee = signal<Marquee | null>(null);
-  /** The card currently being dragged, drawn as a cursor-following DOM ghost. */
-  readonly dragGhost = signal<DragGhost | null>(null);
   readonly contextMenu = signal<OverlayAnchor | null>(null);
   /** Right-click menu of a die or coin (roll / flip / delete). */
   readonly itemMenu = signal<OverlayAnchor | null>(null);
@@ -256,10 +251,9 @@ export class CardInteractions {
     this.selectedIds.set(next);
   }
 
-  /** End the active drag: clear the drag id, the group, and the DOM ghost together. */
+  /** End the active drag: clear the drag id and the group together. */
   private endDrag(): void {
     this.draggingId.set(null);
-    this.dragGhost.set(null);
     this.dragGroup = [];
     this.dragOrigin = null;
     this.spawnDrag = false;
@@ -304,6 +298,70 @@ export class CardInteractions {
     this.dragOrigin = null;
     this.dragGroup = [];
     this.dragTo(id, event);
+  }
+
+  /**
+   * Press on a card that exists nowhere yet — a search hit in the util window
+   * or an entry of the related-cards panel: past the drag threshold it spawns
+   * under the cursor and continues in the hand-drag flow (release over the
+   * table adds it, over a zone widget routes it there, a miss discards it
+   * unseen). `onStart` fires when the drag actually begins, so the popup the
+   * press came from can close itself; a plain click does nothing.
+   */
+  armSpawnCardDrag(event: PointerEvent, card: SpawnCard, onStart?: () => void): void {
+    if (event.button !== 0) return;
+    event.preventDefault(); // no native image drag / text selection
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const move = (e: PointerEvent): void => {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX) return;
+      cleanup();
+      onStart?.();
+      this.beginSpawnCardDrag(card, e);
+    };
+    const cleanup = (): void => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', cleanup);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', cleanup);
+  }
+
+  /** Spawn a named card local-only under the cursor and drag it like a card
+   * played from the hand — the shared world (and the history) only ever see
+   * a drop that landed. */
+  private beginSpawnCardDrag(card: SpawnCard, event: PointerEvent): void {
+    const id = newCardId();
+    this.store.addLocal({
+      id,
+      name: card.name,
+      src: card.src,
+      position: [0, DRAG_Y, 0],
+      yaw: this.room.seatYaw(),
+      faceUp: true,
+      tapped: false,
+      relatedNames: card.related ?? [],
+      ownerUid: this.room.userId() ?? '',
+    });
+    this.beginDragFromHand(id, event, {
+      commit: () => this.room.sendAction(`added ${card.name}`),
+      revert: () => this.store.remove(id),
+    });
+  }
+
+  /** Untap every tapped card I own in one batched write — the turn-start
+   * "untap all" (hotkey U). Cards without an owner (pre-ownerUid rooms) and
+   * other players' cards are left alone. */
+  untapAll(): void {
+    const uid = this.room.userId();
+    if (!uid) return;
+    const writes = this.store
+      .cards()
+      .filter((card) => card.tapped && card.ownerUid === uid)
+      .map((card) => [card.id, { tapped: false }] as const);
+    if (writes.length === 0) return;
+    this.store.updateMany(writes);
+    this.room.sendAction('untapped all their cards');
   }
 
   /**
@@ -581,6 +639,12 @@ export class CardInteractions {
       this.utilWindow.set(null);
       return;
     }
+    // Untap-all is global — it needs no hovered card (moreimprovements.md).
+    if (event.key === 'u') {
+      event.preventDefault();
+      this.untapAll();
+      return;
+    }
     const action = HOTKEYS[event.key];
     const hoveredId = this.hoveredId();
     if (!action || !hoveredId) return;
@@ -622,9 +686,11 @@ export class CardInteractions {
     this.dragTo(id, event);
   }
 
-  /** Follow the cursor: intersect its ray with the horizontal plane at DRAG_Y,
-   * move the dragged card (and any selection travelling with it), and update
-   * the DOM ghost that renders a single dragged card on top of the UI. */
+  /** Follow the cursor: intersect its ray with the horizontal plane at DRAG_Y
+   * and move the dragged card (and any selection travelling with it). The card
+   * stays its 3D instance throughout — same size, same tapped pose — exactly
+   * like a group drag (moreimprovements.md "card drag"; the former DOM ghost
+   * that stood in for a lone card was removed for that consistency). */
   private dragTo(id: string, event: MouseEvent): void {
     if (isItemId(id)) {
       if (!this.setRayFromCursor(event)) return;
@@ -636,18 +702,6 @@ export class CardInteractions {
         attachedTo: null,
       });
       return;
-    }
-    const card = this.store.card(id);
-    // A group keeps its cards visible in the scene (they move together, and
-    // none of them is hiding behind the hand UI); a lone card uses the ghost.
-    if (this.dragGroup.length === 0) {
-      this.dragGhost.set({
-        id,
-        src: card?.src ?? '',
-        faceUp: card?.faceUp ?? true,
-        x: event.clientX,
-        y: event.clientY,
-      });
     }
     if (!this.setRayFromCursor(event)) return;
     if (!this.raycaster.ray.intersectPlane(DRAG_PLANE, this.hit)) return;

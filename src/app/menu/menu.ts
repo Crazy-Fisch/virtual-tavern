@@ -19,6 +19,10 @@ export class Menu {
   private readonly router = inject(Router);
 
   protected readonly dialog = signal<'auth' | 'play' | 'settings' | null>(null);
+  /** Active tab of the auth dialog (login / sign up as tabs, guest below both). */
+  protected readonly authTab = signal<'signin' | 'signup'>('signin');
+  /** Active tab of the play dialog (join room / create room). */
+  protected readonly playTab = signal<'join' | 'create'>('join');
 
   // Auth form
   protected readonly email = signal('');
@@ -41,13 +45,26 @@ export class Menu {
 
   protected openAuth(): void {
     this.error.set(null);
+    this.authTab.set('signin');
     this.dialog.set('auth');
   }
 
   protected openPlay(): void {
     this.error.set(null);
+    this.playTab.set('join');
     if (!this.name()) this.name.set(this.supabase.displayName());
     this.dialog.set('play');
+  }
+
+  /** Switch a dialog tab; an error from the other tab's form no longer applies. */
+  protected showAuthTab(tab: 'signin' | 'signup'): void {
+    this.error.set(null);
+    this.authTab.set(tab);
+  }
+
+  protected showPlayTab(tab: 'join' | 'create'): void {
+    this.error.set(null);
+    this.playTab.set(tab);
   }
 
   protected openSettings(): void {

@@ -1,29 +1,23 @@
 import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { CardApiService } from '../../carddb/card-api.service';
-import { RoomService } from '../../room/room.service';
-import { ZoneStore } from '../../zones/zone-store';
 import { CardInteractions, DRAG_Y, UtilAnchor } from '../card/card-interactions';
 import { CardHit, CardSearchService } from '../card/card-search.service';
-import { CardStore } from '../card/card-store';
-import { newCardId } from '../card/card.types';
 import { CounterVariant, DICE_KINDS, DiceKind, ItemKind, newItem } from '../item/item.types';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY = 2;
 
-/** Spread repeated adds around the clicked spot so cards don't overlap exactly. */
-function jitter(): number {
-  return (Math.random() - 0.5) * 0.12;
-}
-
 /**
  * The "add to game" popup (plain Angular/HTML over the canvas), opened by
  * right-clicking empty table (CardInteractions owns the open/close state and
- * the world position where added objects appear): the game items — dice
+ * the world position where added items appear): the game items — dice
  * (d4/d6/d12/d20), a coin, and +1/+1 or −1/−1 counters, each behind its own
  * expanding row — above a card search (against the user-deposited card API,
- * see legal.md) with a scrollable 3-wide
- * result grid, where each hit can go to the table, my hand, or on top of my deck.
+ * see legal.md; tokens included) with a scrollable 3-wide result grid. A hit
+ * is *dragged* out of the grid: onto the table to add it there, or onto the
+ * hand/deck/graveyard/exile widgets to route it into that zone — the same drop
+ * flow a card played from the hand uses (moreimprovements.md replaced the
+ * former per-hit Table/Hand/Deck buttons with this).
  */
 @Component({
   selector: 'app-util-window',
@@ -35,9 +29,6 @@ export class UtilWindow {
   protected readonly interactions = inject(CardInteractions);
   private readonly searchService = inject(CardSearchService);
   private readonly api = inject(CardApiService);
-  private readonly cards = inject(CardStore);
-  private readonly zones = inject(ZoneStore);
-  private readonly room = inject(RoomService);
 
   protected readonly diceKinds = DICE_KINDS;
   /** Which item row is expanded ('dice' / 'counters'), or null. */
@@ -132,6 +123,16 @@ export class UtilWindow {
   }
 
   /**
+   * Drag a search hit out of the window: past the drag threshold the card
+   * spawns under the cursor (local-only) and the window closes; releasing it
+   * over the table adds it, over a zone widget routes it there, and a miss
+   * discards it. A plain click does nothing.
+   */
+  protected dragHit(event: PointerEvent, hit: CardHit): void {
+    this.interactions.armSpawnCardDrag(event, hit, () => this.close());
+  }
+
+  /**
    * Hand a fresh item to the cursor (tableitems.md): it starts in the dragged
    * state — local to this client, floating at the right-clicked spot until the
    * mouse moves — and a click on the table places it, which is when it reaches
@@ -143,33 +144,5 @@ export class UtilWindow {
     const [x, , z] = anchor.world;
     this.interactions.beginSpawnDrag(newItem(kind, [x, DRAG_Y, z], variant));
     this.close();
-  }
-
-  protected addToTable(hit: CardHit): void {
-    const anchor = this.interactions.utilWindow();
-    if (!anchor) return;
-    const [x, y, z] = anchor.world;
-    this.cards.add({
-      id: newCardId(),
-      name: hit.name,
-      src: hit.src,
-      position: [x + jitter(), y, z + jitter()],
-      yaw: this.room.seatYaw(),
-      faceUp: true,
-      tapped: false,
-      relatedIds: [],
-    });
-    this.room.sendAction(`added ${hit.name}`);
-  }
-
-  /** Closed-zone adds log without the card name, so hands/decks stay hidden. */
-  protected addToHand(hit: CardHit): void {
-    this.zones.addCard('hand', { id: crypto.randomUUID(), name: hit.name, src: hit.src });
-    this.room.sendAction('added a card to their hand');
-  }
-
-  protected addToDeck(hit: CardHit): void {
-    this.zones.addCard('deck', { id: crypto.randomUUID(), name: hit.name, src: hit.src });
-    this.room.sendAction('put a card on top of their deck');
   }
 }

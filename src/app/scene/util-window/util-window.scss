@@ -121,33 +121,15 @@
 
 .hit {
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 
+  // Dragged onto the table (or a zone widget) — no per-hit buttons anymore.
   img {
     width: 100%;
     border-radius: 5px;
-  }
+    cursor: grab;
 
-  .actions {
-    display: flex;
-    gap: 3px;
-
-    button {
-      flex: 1;
-      padding: 3px 0;
-      border: none;
-      border-radius: 4px;
-      background: #35355a;
-      color: #ddd;
-      font-size: 0.68rem;
-      cursor: pointer;
-
-      &:hover {
-        background: #6c4cff;
-        color: #fff;
-      }
+    &:hover {
+      outline: 2px solid #fff;
     }
   }
 }

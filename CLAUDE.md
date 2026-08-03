@@ -75,8 +75,10 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
 The database schema + RLS policies live in `supabase/schema.sql` (paste into the Supabase SQL
 editor once, fresh installs only). Existing installs run the dated
 `supabase/migration-*.sql` files newer than their install instead, in order (latest:
-`migration-2026-08-03-room-cleanup.sql` — `rooms.last_active` + the `touch_room` /
-`close_room` / `cleanup_stale_rooms` RPCs).
+`migration-2026-08-03-world-cleanup.sql` — deletes orphaned `world_objects`/`chat_messages`
+rows and re-creates their room_id FKs with on-delete-cascade, so removing a room reliably
+removes its world state; before it, `migration-2026-08-03-room-cleanup.sql` —
+`rooms.last_active` + the `touch_room` / `close_room` / `cleanup_stale_rooms` RPCs).
 Chat identity is the Supabase auth uid (stable across sessions); avatars are keyed by
 Trystero peerId with names via the `name` action — the two id spaces never need mapping.
 
@@ -121,9 +123,10 @@ until the drop lands (`update()` promotes it into the shared world), so other pl
 see a card that was merely considered. Cards render small
 (`CARD_SCALE` in `card.ts` scales the 10×-authored model down onto the oversized table; each
 cloned material also gets a small negative `polygonOffset` so coplanar cards don't z-fight).
-While a card is being dragged its 3D instance is hidden and a DOM "ghost" (`dragGhost` signal,
-rendered by the Zones overlay) follows the cursor on top of all UI, so the dragged card never
-disappears behind the hand/pile widgets. `CardInteractions`
+A dragged card stays its 3D instance throughout — same size, same tapped pose, exactly like
+a group drag (the former DOM "drag ghost" that stood in for a lone card was removed for that
+consistency; a card dragged over the hand/pile widgets simply passes behind them).
+`CardInteractions`
 (`src/app/scene/card/card-interactions.ts`, provided by Scene, attached to the canvas)
 raycasts hover/picking for cards, runs the drag-to-move flow (press and drag past
 a small threshold → float at `DRAG_Y` → release commits onto whatever the camera-through-cursor
@@ -138,19 +141,28 @@ to-graveyard/to-exile/delete, and the item menu) plus the **util window**
 (`src/app/scene/util-window/`), opened by right-clicking empty table: the game items
 (dice/coin/counters, see below) above a debounced card search
 via `CardSearchService` (`card-search.service.ts` — fetches `{base}/cards/search` on the
-user-deposited card API, cached per API+query; without a deposit the util window shows a
-pointer to the Decks screen) with per-hit
-add-to-table/hand/deck. Hotkeys on the hovered card live in the `HOTKEYS` record.
-`CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the hand DOM
-continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs the play)
-and `revert` (off-table miss or Escape, back into the hand) decide the ending. The pointer
-listeners live on `window` (not the canvas) so a hand drag started over DOM keeps following;
-hover picking is gated to moves whose target is the canvas.
+user-deposited card API with `include_extras=true` so **tokens** show up too, cached per
+API+query; without a deposit the util window shows a pointer to the Decks screen). A search
+hit is **dragged** out of the grid (`armSpawnCardDrag` → the private `beginSpawnCardDrag`:
+local-only spawn under the cursor, same drop flow as a hand play — table adds it, a zone
+widget absorbs it, a miss discards it unseen; the former per-hit Table/Hand/Deck buttons are
+gone). **Related cards** work the same way: `CardState.relatedNames` carries the names from
+the card data's `all_parts` (populated by search hits and, for deck cards, by
+`CardDatabaseService.lookup`), the panel resolves them to images via the card database, and
+each entry is draggable onto the table (click = view large). Hotkeys on the hovered card
+live in the `HOTKEYS` record; **U** is global — `untapAll()` untaps every tapped card whose
+`CardState.ownerUid` (stamped on every card put onto the table) is mine, in one batched
+write, and the Zones overlay offers the same as an "Untap all" button next to the life
+counter. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
+hand DOM continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs
+the play) and `revert` (off-table miss or Escape, back into the hand) decide the ending. The
+pointer listeners live on `window` (not the canvas) so a hand drag started over DOM keeps
+following; hover picking is gated to moves whose target is the canvas.
 
 **Selection** (`designdocs/cardselection.md`): dragging on empty table draws a marquee
 (`marquee` signal, drawn by `CardOverlay`); on release every card whose origin projects
 inside it lands in `selectedIds` and renders with the hover highlight. Pressing one selected
-card drags the whole group (offsets kept, no DOM ghost — the cards stay in the scene);
+card drags the whole group (offsets kept, the cards stay in the scene — like every drag);
 a plain click still taps just one; `act()` applies `GROUP_ACTIONS` (`card.types.ts`:
 tap/related/delete) to the whole selection and drops the selection for anything else.
 Clicking empty table, or grabbing/right-clicking a card that is not selected, clears it.
@@ -235,9 +247,13 @@ gunzips `.gz` files in-stream (`DecompressionStream`, chosen by sniffing the mag
 headers can't distinguish a raw `.gz` file from a transparently `Content-Encoding`-inflated
 response), and streams it through `JsonChunkParser` (JSON array **or** JSON Lines; ~450 MB —
 never buffered whole; bounded memory), caching the distilled index. `lookup(name)`
-resolves decklist names (incl. double-faced front faces) to `{name, src}`. The cache key
-embeds the API base URL, so changing the deposit loads that API's own index (and the
-pre-deposit legacy cache entry is deleted on boot).
+resolves decklist names (incl. double-faced front faces) to `{name, src, related?}` —
+`related` holds the card's `all_parts` names (tokens it creates, meld results, …), and
+tokens are indexed like any other bulk-file card, which is what the related panel resolves
+against. The cache key embeds the API base URL plus an index version (`index:v3:` since
+related names were added; a same-base v2 entry is deleted after the rebuild), so changing
+the deposit loads that API's own index (and the pre-deposit legacy cache entry is deleted
+on boot).
 
 ### 3D assets
 
@@ -275,18 +291,24 @@ disposes only its cloned materials — geometry/textures stay shared. `Item`
 (`src/app/scene/item/item.ts`) follows the same pattern for dice/coins/counters, but owns its
 procedural geometry and canvas textures too, so it disposes those as well; its nodes are
 wrapper (world position) → pivot (rest height, and the coin's hop) → body (what a roll
-rotates). Follow this pattern for future instanced scene objects.
+rotates). Follow this pattern for future instanced scene objects — and never read the
+required `state` input synchronously in the constructor: inputs are bound only after
+construction (NG0950). `Item` defers its spawn with `afterNextRender`; `Card` gets away
+with a constructor call only because its spawn `await`s the model load before touching
+`state`.
 
 ### Routing and screens
 
 `App` is just a `<router-outlet>`. Routes (`app.routes.ts`):
 
 - `''` → `Menu` (`src/app/menu/`): landing screen. Signed out, the primary button opens the
-  Auth dialog (email/password sign-in, sign-up with a chosen **username** stored as
-  `display_name` so an account is never shown as "Guest", continue-as-guest). Signing in lands
+  Auth dialog — **tabbed**: a Sign in tab (email/password) and a Sign up tab (email/password +
+  a chosen **username** stored as `display_name` so an account is never shown as "Guest"),
+  with continue-as-guest at the bottom of both. Signing in lands
   back on the menu (not straight into Play). Signed in, the primary button opens the Play
-  dialog: join-by-code or create-room (room name **required, ≥3 chars**). Only guests type a
-  per-room display name; registered players always play under their username. Also Decks
+  dialog — also tabbed: Join room (by code) / Create room (room name **required, ≥3 chars**).
+  Only guests type a per-room display name (shown on both tabs); registered players always
+  play under their username. Also Decks
   (`routerLink="/decks"`, shown for anyone signed in — guests included), Settings (sample,
   not-yet-persisted), and Sign out.
 - `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — only fully signed-out

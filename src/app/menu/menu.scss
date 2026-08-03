@@ -85,6 +85,35 @@ button,
   }
 }
 
+// Tab strip at the top of the auth and play dialogs. Beats the shared
+// `button` rules above via the `.tabs .tab` specificity.
+.tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #2e2e3a;
+
+  .tab {
+    flex: 1;
+    padding: 0.55rem 0.75rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0.4rem 0.4rem 0 0;
+    background: none;
+    color: #999;
+
+    &:hover {
+      background: #24242f;
+      color: #ddd;
+    }
+
+    &.active {
+      color: #fff;
+      border-bottom-color: #6c4cff;
+    }
+  }
+}
+
 // Dialog form contents
 .form {
   display: flex;

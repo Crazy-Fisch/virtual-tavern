@@ -13,7 +13,8 @@ function makeCard(overrides: Partial<CardState> = {}): CardState {
     yaw: 0,
     faceUp: true,
     tapped: false,
-    relatedIds: [],
+    relatedNames: [],
+    ownerUid: 'user-1',
     ...overrides,
   };
 }
@@ -45,13 +46,13 @@ describe('CardStore', () => {
       position: [1, 0.5, -1],
       yaw: Math.PI,
       faceUp: false,
-      relatedIds: [],
+      relatedNames: [],
     });
     expect(store.card('card:remote')).toMatchObject({ name: 'Remote', faceUp: false });
   });
 
   it('parses malformed payloads defensively', () => {
-    room.setWorldObject('card:broken', { position: 'nope', relatedIds: [1, 'ok'] });
+    room.setWorldObject('card:broken', { position: 'nope', relatedNames: [1, 'ok'] });
     expect(store.card('card:broken')).toEqual({
       id: 'card:broken',
       name: 'a card',
@@ -60,7 +61,8 @@ describe('CardStore', () => {
       yaw: 0,
       faceUp: true,
       tapped: false,
-      relatedIds: ['ok'],
+      relatedNames: ['ok'],
+      ownerUid: '',
     });
   });
 
@@ -142,15 +144,14 @@ describe('CardStore', () => {
     expect(store.card(second.id)!.position).toEqual([2, 0.21, 0]);
   });
 
-  it('remove deletes the card; dangling relatedIds resolve to nothing', () => {
+  it('remove deletes the card; related names on other cards are untouched', () => {
     const first = makeCard();
-    const second = makeCard({ relatedIds: [first.id] });
+    const second = makeCard({ relatedNames: ['Goblin Token'] });
     store.add(first);
     store.add(second);
     store.remove(first.id);
     expect(store.card(first.id)).toBeUndefined();
-    // The stale reference stays in data but resolves to undefined on lookup.
-    expect(store.card(second.id)!.relatedIds).toEqual([first.id]);
-    expect(store.card(first.id)).toBeUndefined();
+    // Related names are data, not references — removing cards never breaks them.
+    expect(store.card(second.id)!.relatedNames).toEqual(['Goblin Token']);
   });
 });

@@ -444,7 +444,8 @@ button.mini {
   font-weight: 700;
 }
 
-.reveal-toggle {
+.reveal-toggle,
+.untap-all {
   @extend %panel;
   @extend %pill;
   padding: calc(0.35 * var(--u)) calc(0.8 * var(--u));
@@ -528,32 +529,6 @@ button.mini {
 
   .label {
     color: #9fc3ff;
-  }
-}
-
-// ---------- dragged-card ghost ----------
-// Fixed at the cursor above every overlay; non-interactive so drop routing's
-// elementFromPoint still sees the zone beneath it. Card-back look when face-down.
-// Width matches the 3D card's on-screen size (CARD_SCALE in card.ts: 0.635 ·
-// 0.75 / 4.2 of the viewport height = 6.38 --u), so a card neither grows nor
-// shrinks when picked up.
-.drag-ghost {
-  position: fixed;
-  z-index: 60;
-  width: calc(6.38 * var(--u));
-  aspect-ratio: 63 / 88;
-  transform: translate(-50%, -50%);
-  border-radius: calc(0.4 * var(--u));
-  overflow: hidden;
-  pointer-events: none;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  @extend %card-back;
-
-  img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
   }
 }
 
