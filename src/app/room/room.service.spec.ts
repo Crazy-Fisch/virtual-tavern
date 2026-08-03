@@ -6,8 +6,9 @@ import { RoomService } from './room.service';
 
 type QueryResult = { data: unknown; error: { message: string } | null };
 
-/** Chainable thenable stub standing in for a PostgREST query builder. */
-function makeQuery(result: QueryResult): unknown {
+/** Chainable thenable stub standing in for a PostgREST query builder. A queued
+ * promise lets a test hold a request in flight and release it later. */
+function makeQuery(result: QueryResult | Promise<QueryResult>): unknown {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proxy: any = new Proxy(function () {}, {
     get(_target, prop) {
@@ -27,7 +28,9 @@ const ROOM_RPC: QueryResult = {
 
 type ChangePayload = { eventType?: string; new?: unknown; old?: unknown };
 
-function setup(opts: { rpc?: QueryResult; tables?: Record<string, QueryResult[]> } = {}) {
+function setup(
+  opts: { rpc?: QueryResult; tables?: Record<string, (QueryResult | Promise<QueryResult>)[]> } = {},
+) {
   const tables = opts.tables ?? {};
   const handlers: Record<string, (payload: ChangePayload) => void> = {};
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,11 +207,160 @@ describe('RoomService', () => {
     expect(service.worldState()['card:c1']).toBeUndefined();
   });
 
+  it('setWorldObjects applies every entry optimistically and sends ONE batched request', async () => {
+    const { service, client } = setup({ rpc: ROOM_RPC });
+    await service.joinByCode('ABC123', 'Tim');
+    const worldRequests = () =>
+      client.from.mock.calls.filter(([table]) => table === 'world_objects').length;
+    const before = worldRequests();
+
+    service.setWorldObjects([
+      ['zone:user-1:deck', { cards: [] }],
+      ['zone:user-1:hand', { cards: [{ id: 'a' }] }],
+    ]);
+    expect(service.worldState()['zone:user-1:deck']?.data).toEqual({ cards: [] });
+    expect(service.worldState()['zone:user-1:hand']?.data).toEqual({ cards: [{ id: 'a' }] });
+    await flush();
+    expect(worldRequests()).toBe(before + 1); // deck+hand in one atomic upsert
+  });
+
+  it('adopts the upsert ack (server timestamp), so later remote writes win despite clock skew', async () => {
+    const ack = {
+      object_id: 'card:c1',
+      data: { name: 'Mine' },
+      updated_by: 'user-1',
+      updated_at: '2026-07-17T10:00:10Z',
+    };
+    const { service, handlers } = setup({
+      rpc: ROOM_RPC,
+      tables: {
+        world_objects: [
+          { data: [], error: null }, // snapshot load on join
+          { data: [ack], error: null }, // upsert ack
+        ],
+      },
+    });
+    await service.joinByCode('ABC123', 'Tim');
+
+    // The optimistic write stamps the local clock — far ahead of the server's.
+    service.setWorldObject('card:c1', { name: 'Mine' });
+    await flush();
+    expect(service.worldState()['card:c1']?.t).toBe(Date.parse(ack.updated_at));
+
+    // A remote write one server-second later must now win last-writer-wins;
+    // against the (much larger) optimistic local timestamp it would have lost.
+    handlers['world_objects']!({
+      eventType: 'UPDATE',
+      new: {
+        object_id: 'card:c1',
+        data: { name: 'Theirs' },
+        updated_by: 'u2',
+        updated_at: '2026-07-17T10:00:11Z',
+      },
+    });
+    expect(service.worldState()['card:c1']?.data).toEqual({ name: 'Theirs' });
+  });
+
+  it('a failed world write resyncs the objects from the database instead of diverging', async () => {
+    const dbRow = {
+      object_id: 'zone:user-1:deck',
+      data: { cards: [{ id: 'top' }] },
+      updated_by: 'user-1',
+      updated_at: '2026-07-17T10:00:10Z',
+    };
+    const { service } = setup({
+      rpc: ROOM_RPC,
+      tables: {
+        world_objects: [
+          { data: [dbRow], error: null }, // snapshot load on join
+          { data: null, error: { message: 'network down' } }, // failing upsert
+          { data: [dbRow], error: null }, // resync select
+        ],
+      },
+    });
+    await service.joinByCode('ABC123', 'Tim');
+
+    service.setWorldObject('zone:user-1:deck', { cards: [] });
+    expect(service.worldState()['zone:user-1:deck']?.data).toEqual({ cards: [] }); // optimistic
+    await flush();
+    // The write never landed: local state snaps back to the database's truth
+    // (the drawn card is visibly back on the deck, not silently lost).
+    expect(service.worldState()['zone:user-1:deck']?.data).toEqual({ cards: [{ id: 'top' }] });
+  });
+
+  it('a failed write for an object the database never had removes it locally', async () => {
+    const { service } = setup({
+      rpc: ROOM_RPC,
+      tables: {
+        world_objects: [
+          { data: [], error: null }, // snapshot load on join
+          { data: null, error: { message: 'network down' } }, // failing upsert
+          { data: [], error: null }, // resync select: row does not exist
+        ],
+      },
+    });
+    await service.joinByCode('ABC123', 'Tim');
+
+    service.setWorldObject('card:new', { name: 'Ghost' });
+    await flush();
+    expect(service.worldState()['card:new']).toBeUndefined();
+  });
+
+  it('an own echo of an older write does not clobber a newer write still in flight', async () => {
+    let release!: (v: QueryResult) => void;
+    const gate = new Promise<QueryResult>((r) => (release = r));
+    const { service, handlers } = setup({
+      rpc: ROOM_RPC,
+      tables: {
+        world_objects: [
+          { data: [], error: null }, // snapshot load on join
+          gate, // the new write's upsert, held in flight
+        ],
+      },
+    });
+    await service.joinByCode('ABC123', 'Tim');
+
+    service.setWorldObject('zone:user-1:hand', { cards: [{ id: 'a' }, { id: 'b' }] });
+    // The realtime echo of the PREVIOUS hand write arrives while the new
+    // write's request is still pending. Force-adopting it used to roll the
+    // hand back (dropping the just-drawn card until — if ever — healed).
+    handlers['world_objects']!({
+      eventType: 'UPDATE',
+      new: {
+        object_id: 'zone:user-1:hand',
+        data: { cards: [{ id: 'a' }] },
+        updated_by: 'user-1',
+        updated_at: '2026-07-17T10:00:10Z',
+      },
+    });
+    expect(service.worldState()['zone:user-1:hand']?.data).toEqual({
+      cards: [{ id: 'a' }, { id: 'b' }],
+    });
+
+    release({
+      data: [
+        {
+          object_id: 'zone:user-1:hand',
+          data: { cards: [{ id: 'a' }, { id: 'b' }] },
+          updated_by: 'user-1',
+          updated_at: '2026-07-17T10:00:11Z',
+        },
+      ],
+      error: null,
+    });
+    await flush();
+    expect(service.worldState()['zone:user-1:hand']?.data).toEqual({
+      cards: [{ id: 'a' }, { id: 'b' }],
+    });
+    expect(service.worldState()['zone:user-1:hand']?.t).toBe(Date.parse('2026-07-17T10:00:11Z'));
+  });
+
   it('handles remote DELETE events, ignoring other rooms (deletes are unfiltered)', async () => {
     const { service, handlers } = setup({ rpc: ROOM_RPC });
     await service.joinByCode('ABC123', 'Tim');
 
     service.setWorldObject('card:c1', { name: 'Water Worm' });
+    await flush(); // let the write settle — a DELETE during an own in-flight write is ignored
     handlers['world_objects']!({
       eventType: 'DELETE',
       new: {},

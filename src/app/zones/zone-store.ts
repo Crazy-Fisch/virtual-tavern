@@ -112,10 +112,12 @@ export class ZoneStore {
    */
   loadDeck(cards: ZoneCard[]): void {
     if (!this.room.userId()) return;
-    this.write('hand', []);
-    this.write('graveyard', []);
-    this.write('exile', []);
-    this.write('deck', shuffled(cards));
+    this.writeZones([
+      ['hand', []],
+      ['graveyard', []],
+      ['exile', []],
+      ['deck', shuffled(cards)],
+    ]);
     this.room.sendAction(`joined the game with a ${cards.length}-card deck`);
   }
 
@@ -132,13 +134,16 @@ export class ZoneStore {
     }
   }
 
-  /** Move the top card of my deck into my hand. */
+  /** Move the top card of my deck into my hand — one atomic write, so a lost
+   * request can never leave the card in neither zone (stabilityandimprovements.md). */
   draw(): void {
     const { deck, hand } = this.mine();
     const top = deck[0];
     if (!top) return;
-    this.write('deck', deck.slice(1));
-    this.write('hand', [...hand, top]);
+    this.writeZones([
+      ['deck', deck.slice(1)],
+      ['hand', [...hand, top]],
+    ]);
     this.room.sendAction('drew a card');
   }
 
@@ -151,7 +156,9 @@ export class ZoneStore {
 
   /** Move a card from the table into one of my zones (deck = on top). */
   takeFromTable(card: CardState, kind: ZoneKind): void {
-    this.room.removeWorldObject(card.id);
+    // A hand card dropped onto a zone widget mid-drag is still local-only —
+    // there is no shared object to delete (see CardStore.addLocal).
+    if (this.room.worldState()[card.id]) this.room.removeWorldObject(card.id);
     this.addCard(kind, { id: crypto.randomUUID(), name: card.name, src: card.src });
     this.room.sendAction(TAKE_ACTIONS[kind](card.name));
   }
@@ -178,19 +185,6 @@ export class ZoneStore {
       hand.filter((c) => c.id !== zoneCardId),
     );
     return card;
-  }
-
-  /** Retrieve a card from one of my zones back into my hand (graveyard examine). */
-  takeToHand(kind: Exclude<ZoneKind, 'hand'>, zoneCardId: string): void {
-    const zone = this.mine()[kind];
-    const card = zone.find((c) => c.id === zoneCardId);
-    if (!card) return;
-    this.write(
-      kind,
-      zone.filter((c) => c.id !== zoneCardId),
-    );
-    this.write('hand', [...this.mine().hand, card]);
-    this.room.sendAction(`returned ${card.name} to their hand`);
   }
 
   /**
@@ -249,11 +243,16 @@ export class ZoneStore {
   }
 
   private write(kind: ZoneKind, cards: ZoneCard[]): void {
+    this.writeZones([[kind, cards]]);
+  }
+
+  /** Write several of my zones in one shared batch (atomic on the server). */
+  private writeZones(zones: ReadonlyArray<readonly [ZoneKind, ZoneCard[]]>): void {
     const uid = this.room.userId();
     if (!uid) return;
-    this.room.setWorldObject(zoneId(uid, kind), {
-      ownerName: this.room.displayName(),
-      cards,
-    });
+    const name = this.room.displayName();
+    this.room.setWorldObjects(
+      zones.map(([kind, cards]) => [zoneId(uid, kind), { ownerName: name, cards }]),
+    );
   }
 }

@@ -85,6 +85,20 @@ describe('ZoneStore', () => {
     expect(room.actions).toEqual(['drew a card']);
   });
 
+  it('draw writes deck and hand in ONE batch, so a lost request cannot eat the card', () => {
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [card('top', 'Top')] });
+    room.batches.length = 0;
+    store.draw();
+    expect(room.batches).toEqual([['zone:user-1:deck', 'zone:user-1:hand']]);
+  });
+
+  it('loadDeck creates all four zones in one atomic batch', () => {
+    store.loadDeck([card('a', 'A')]);
+    expect(room.batches).toEqual([
+      ['zone:user-1:hand', 'zone:user-1:graveyard', 'zone:user-1:exile', 'zone:user-1:deck'],
+    ]);
+  });
+
   it('drawing from an empty deck does nothing', () => {
     store.draw();
     expect(room.actions).toEqual([]);
@@ -127,11 +141,11 @@ describe('ZoneStore', () => {
     expect(store.playFromHand('a')).toBeNull();
   });
 
-  it('takeToHand retrieves a graveyard card into my hand', () => {
-    room.setWorldObject('zone:user-1:graveyard', { ownerName: 'Tim', cards: [card('a', 'Ace')] });
-    store.takeToHand('graveyard', 'a');
-    expect(store.mine().graveyard).toEqual([]);
-    expect(store.mine().hand).toEqual([card('a', 'Ace')]);
-    expect(room.actions).toEqual(['returned Ace to their hand']);
+  it('takeFromTable with a local-only card (hand drag onto a zone) deletes nothing', () => {
+    // The card never reached the shared world (CardStore.addLocal), so there
+    // is no world object to remove — but the zone still absorbs it.
+    store.takeFromTable(tableCard('Water Worm'), 'graveyard');
+    expect(store.mine().graveyard.map((c) => c.name)).toEqual(['Water Worm']);
+    expect(room.actions).toEqual(['put Water Worm into their graveyard']);
   });
 });

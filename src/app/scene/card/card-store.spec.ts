@@ -95,6 +95,53 @@ describe('CardStore', () => {
     expect(store.card(card.id)!.position).toEqual([0, 0.5, 0]);
   });
 
+  describe('local-only cards (a hand card mid-drag)', () => {
+    it('addLocal renders the card without touching the shared world', () => {
+      const card = makeCard();
+      store.addLocal(card);
+      expect(store.card(card.id)).toEqual(card);
+      expect(room.worldState()[card.id]).toBeUndefined();
+    });
+
+    it('previews overlay a local card like any other', () => {
+      const card = makeCard();
+      store.addLocal(card);
+      store.preview(card.id, { position: [3, 0.8, 3] });
+      expect(store.card(card.id)!.position).toEqual([3, 0.8, 3]);
+      expect(room.worldState()[card.id]).toBeUndefined();
+    });
+
+    it('update promotes a local card into the shared world (the drop landing)', () => {
+      const card = makeCard();
+      store.addLocal(card);
+      store.update(card.id, { position: [1, 0.21, 1] });
+      expect(room.worldState()[card.id]!.data['position']).toEqual([1, 0.21, 1]);
+      expect(store.cards()).toHaveLength(1); // promoted, not duplicated
+    });
+
+    it('remove discards a local card silently — the network never saw it', () => {
+      const card = makeCard();
+      store.addLocal(card);
+      store.remove(card.id);
+      expect(store.card(card.id)).toBeUndefined();
+      expect(room.worldState()[card.id]).toBeUndefined();
+    });
+  });
+
+  it('updateMany commits several cards in one shared batch (group drop)', () => {
+    const first = makeCard();
+    const second = makeCard();
+    store.add(first);
+    store.add(second);
+    room.batches.length = 0;
+    store.updateMany([
+      [first.id, { position: [1, 0.21, 0] }],
+      [second.id, { position: [2, 0.21, 0] }],
+    ]);
+    expect(room.batches).toEqual([[first.id, second.id]]);
+    expect(store.card(second.id)!.position).toEqual([2, 0.21, 0]);
+  });
+
   it('remove deletes the card; dangling relatedIds resolve to nothing', () => {
     const first = makeCard();
     const second = makeCard({ relatedIds: [first.id] });

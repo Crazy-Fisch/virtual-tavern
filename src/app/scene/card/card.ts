@@ -19,12 +19,16 @@ const HOVER_TINT = 0x333333;
 const FRONT_EMISSIVE = 1;
 const FRONT_EMISSIVE_HOVER = 1.28;
 /**
- * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.5 brings a card
- * down to 0.32 × 0.44 m — well above true proportion, chosen for readability on
+ * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.75 brings a card
+ * down to 0.48 × 0.67 m — well above true proportion, chosen for readability on
  * the (oversized, 4 × 6 m) table under the fixed orthographic camera, where it
- * works out to roughly 82 × 114 CSS px on a 1080p screen.
+ * works out to roughly 122 × 170 CSS px on a 1080p screen. This width matches
+ * the DOM drag ghost (`.drag-ghost` in zones.scss, 6.38 --u), so a card keeps
+ * its size when picked up and when it lands (stabilityandimprovements.md
+ * "card sizes"): 0.635 · 0.75 / 4.2 (VIEW_HEIGHT) = 11.34% of the viewport
+ * height = 6.38 --u at 16:9 and wider.
  */
-const CARD_SCALE = 0.5;
+const CARD_SCALE = 0.75;
 
 /**
  * A single playing card in the 3D scene, rendering the CardState it receives

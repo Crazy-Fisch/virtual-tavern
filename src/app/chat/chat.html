@@ -7,8 +7,26 @@
     <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
     <button class="leave" (click)="leave()">Leave</button>
   </div>
+  <div class="tabs">
+    <button
+      type="button"
+      class="tab"
+      [class.active]="tab() === 'chat'"
+      (click)="tab.set('chat')"
+    >
+      Chat
+    </button>
+    <button
+      type="button"
+      class="tab"
+      [class.active]="tab() === 'history'"
+      (click)="tab.set('history')"
+    >
+      History
+    </button>
+  </div>
   <div #log class="log">
-    @for (m of room.messages(); track m.id) {
+    @for (m of visible(); track m.id) {
       @if (m.kind === 'action') {
         <div class="msg action">{{ m.name }}: {{ m.text }}</div>
       } @else {
@@ -18,7 +36,11 @@
         </div>
       }
     } @empty {
-      <p class="hint">No messages yet. Say hi 👋</p>
+      @if (tab() === 'history') {
+        <p class="hint">Nothing has happened yet.</p>
+      } @else {
+        <p class="hint">No messages yet. Say hi 👋</p>
+      }
     }
   </div>
   <form class="compose" (submit)="send($event)">

@@ -44,10 +44,13 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   `<name>: <action>`). World objects carry a **jsonb `data` payload** keyed by an id whose
   prefix names the owning domain (`card:` CardStore, `item:` ItemStore, `zone:` ZoneStore;
   unknown prefixes such
-  as `token:` rows from removed features are ignored); `setWorldObject(id, data)` upserts
-  optimistically (a DB trigger stamps the authoritative `updated_at` used for
-  last-writer-wins; own echoes are adopted unconditionally to heal client clock skew) and
-  `removeWorldObject(id)` deletes. Realtime DELETE events are not filtered by Supabase, so
+  as `token:` rows from removed features are ignored); `setWorldObject(id, data)` /
+  `setWorldObjects(entries)` upsert optimistically — a multi-entry batch is ONE request, so
+  a multi-zone move like a draw commits atomically (a DB trigger stamps the authoritative
+  `updated_at` used for last-writer-wins; requests dispatch through an ordered chain; the
+  upsert's response row is adopted to heal client clock skew, own realtime echoes only when
+  no newer write is in flight, and a failed write re-reads the rows so local state snaps
+  back to the database) — and `removeWorldObject(id)` deletes. Realtime DELETE events are not filtered by Supabase, so
   the handler drops other rooms' deletes by `old.room_id`. Seating: `RoomInfo.ownerId` (from
   the create insert or the join RPC's `room_owner`) feeds `isRoomOwner`/`seatYaw` — the room
   creator sits at +Z, everyone else views from the mirrored −Z table end and spawns their
@@ -86,8 +89,9 @@ ultrawide screen sees more table rather than smaller cards. The `CameraRig` comp
 (`src/app/scene/camera-rig/camera-rig.ts`) poses it: a fixed bird's-eye base pose (~26° off
 vertical, `CAMERA_POS`/`CAMERA_TARGET`, aimed slightly toward the player's own end) looking
 down on the table from the player's table end — mirrored to the
-opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, fixed once on mount — plus
-a slight clamped pan toward the mouse near screen edges. There are no avatars or movement — the former door/avatar code was
+opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, fixed once on mount (the
+former mouse-edge pan was removed as irritating under the orthographic view). There are no
+avatars or movement — the former door/avatar code was
 removed with the pivot to a card-table view. `P2pService`'s position stream is dormant
 (nothing calls `sendPosition()`; the service still provides `peerCount` for the chat badge
 and is the transport to reuse for future high-frequency sync like card drags). For networked
@@ -102,7 +106,10 @@ Card interactions (see `designdocs/cardinteractions.md` and
 late joiner starts from the persisted snapshot. Mutations write back through
 `setWorldObject`/`removeWorldObject`; dragging stays a local `preview()` override until the
 drop commits (remote players see the placement, not the 60 Hz cursor path — the P2P layer is
-still the transport to reuse if live drag streaming is ever wanted). Cards render small
+still the transport to reuse if live drag streaming is ever wanted). A card being played out
+of the hand is more private still: `CardStore.addLocal()` keeps it entirely on this client
+until the drop lands (`update()` promotes it into the shared world), so other players never
+see a card that was merely considered. Cards render small
 (`CARD_SCALE` in `card.ts` scales the 10×-authored model down onto the oversized table; each
 cloned material also gets a small negative `polygonOffset` so coplanar cards don't z-fight).
 While a card is being dragged its 3D instance is hidden and a DOM "ghost" (`dragGhost` signal,
@@ -212,8 +219,11 @@ instant rejoin) and `loading`/`progress`/`error` signals that drive the scene's 
 overlay. Cached Groups are never disposed — `dispose()` is only for replaced procedural
 placeholders. Missing model files fall back gracefully to the procedural floor (console warn),
 so the app works before any GLB exists. Item models are optional in the same spirit:
-`ITEM_MODEL_URLS` is empty, so dice/coins/counters render procedural placeholders and no
-request is ever made for a file that isn't there.
+a kind without an `ITEM_MODEL_URLS` entry renders its procedural placeholder and no request
+is ever made for a file that isn't there; a registered model (currently the d4) is
+normalised on load to the placeholder's size and centred on its bounding box
+(`Item.normalizeModel`), so authored scale/origin don't matter, and untextured full-metal
+default materials are made matte so they don't render black.
 
 `loadTexture` (card art, from Scryfall) tries an `<img>` first and falls back to fetching the
 bytes in CORS mode and building the texture from an `ImageBitmap`. That fallback exists
@@ -259,8 +269,10 @@ rotates). Follow this pattern for future instanced scene objects.
   the join-by-code RPC) — and redirects to `/` only if that fails.
 
 `Chat` (`src/app/chat/`) is the in-room overlay and the game history: shows the room name and
-share code + peer count, renders `room.messages()` (own messages matched by auth uid; `'action'`
-kind lines plain white, typed messages colored, log pinned to the newest message), and its
+share code + peer count, and renders `room.messages()` split over two tabs — **Chat**
+(default) with the user-typed messages (own messages matched by auth uid, colored) and
+**History** with the `'action'`-kind game lines (plain white); the log stays pinned to the
+newest message of the active tab, and its
 Leave button calls `room.leave()` and routes back to `/`. Popups use the reusable `Dialog`
 (`src/app/shared/dialog/`), a modal that projects content via `<ng-content>` and emits `close`
 on backdrop click or Esc. Its `fit` input sizes the frame to the projected content instead of

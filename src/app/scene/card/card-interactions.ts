@@ -450,6 +450,9 @@ export class CardInteractions {
         this.clearDragPreviews(draggingId);
         this.endDrag();
         this.items.removeAttachedTo(card.id);
+        // A hand card dropped straight onto a zone widget never reached the
+        // shared world — discard the local copy before the zone absorbs it.
+        if (handDrag) this.store.remove(draggingId);
         target.accept(card);
         return;
       }
@@ -648,14 +651,18 @@ export class CardInteractions {
       this.endDrag();
       return true;
     }
-    this.store.update(id, { position: [hit.point.x, y, hit.point.z] });
+    // One batched commit: the whole group (or the single card) lands atomically.
+    const writes: [string, Partial<CardState>][] = [
+      [id, { position: [hit.point.x, y, hit.point.z] }],
+    ];
     if (this.dragOrigin) {
       const dx = hit.point.x - this.dragOrigin.x;
       const dz = hit.point.z - this.dragOrigin.z;
       for (const member of this.dragGroup) {
-        this.store.update(member.id, { position: [member.start[0] + dx, y, member.start[2] + dz] });
+        writes.push([member.id, { position: [member.start[0] + dx, y, member.start[2] + dz] }]);
       }
     }
+    this.store.updateMany(writes);
     this.endDrag();
     return true;
   }

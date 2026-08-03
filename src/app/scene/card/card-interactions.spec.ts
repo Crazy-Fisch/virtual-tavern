@@ -277,10 +277,11 @@ describe('CardInteractions', () => {
       expect(interactions.draggingId()).toBeNull();
     });
 
-    /** A card freshly played from the hand UI, mid-drag via beginDragFromHand. */
+    /** A card freshly played from the hand UI, mid-drag via beginDragFromHand.
+     * Local-only, like Zones.beginPlay spawns it — nothing on the network yet. */
     function beginHandDrag(at: { clientX: number; clientY: number }) {
       const playedId = newCardId();
-      store.add({
+      store.addLocal({
         id: playedId,
         name: 'Played',
         src: 'https://example.com/played.jpg',
@@ -312,6 +313,16 @@ describe('CardInteractions', () => {
       expect(interactions.draggingId()).toBeNull();
     });
 
+    it('a hand card stays off the network until the drop lands (game stability)', () => {
+      const at = screenAt(-1, 0, 2);
+      const { playedId } = beginHandDrag(at);
+      // Mid-drag: visible locally, but the shared world has never seen it.
+      expect(store.card(playedId)).toBeDefined();
+      expect(room.worldState()[playedId]).toBeUndefined();
+      up(at);
+      expect(room.worldState()[playedId]).toBeDefined();
+    });
+
     it('a hand card released off the table reverts into the hand', () => {
       const offTable = screenAt(15, 0, 15); // beyond the 20×20 surface
       const { hooks } = beginHandDrag(offTable);
@@ -319,6 +330,19 @@ describe('CardInteractions', () => {
       expect(hooks.revert).toHaveBeenCalledOnce();
       expect(hooks.commit).not.toHaveBeenCalled();
       expect(interactions.draggingId()).toBeNull();
+    });
+
+    it('a hand card dropped onto a zone widget is absorbed without a table trace', () => {
+      const accept = vi.fn();
+      const target = { hitTest: () => true, accept };
+      interactions.registerDropTarget(target);
+      const at = screenAt(-1, 0, 2);
+      const { playedId } = beginHandDrag(at);
+      up(at);
+      expect(accept).toHaveBeenCalledOnce();
+      expect(store.card(playedId)).toBeUndefined(); // local copy discarded
+      expect(room.worldState()[playedId]).toBeUndefined(); // never networked
+      interactions.unregisterDropTarget(target);
     });
 
     it('Escape cancels a hand drag back into the hand', () => {

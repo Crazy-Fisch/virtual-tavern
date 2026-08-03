@@ -69,6 +69,11 @@ export class RoomService {
   private readonly _messages = signal<ChatMessage[]>([]);
   private readonly _world = signal<WorldState>({});
   private channel?: RealtimeChannel;
+  /** Count of in-flight world writes (upserts/deletes) per object id. */
+  private readonly pendingWrites = new Map<string, number>();
+  /** World mutations dispatch in order — a later request can never overtake an
+   * earlier one and scramble the end state (e.g. two quick draws). */
+  private writeChain: Promise<void> = Promise.resolve();
 
   readonly currentRoom = this._currentRoom.asReadonly();
   readonly joined = computed(() => this._currentRoom() !== null);
@@ -160,33 +165,130 @@ export class RoomService {
 
   /** Upsert a shared world object; the DB trigger stamps the authoritative timestamp. */
   setWorldObject(id: string, data: WorldObjectData): void {
+    this.setWorldObjects([[id, data]]);
+  }
+
+  /**
+   * Upsert several world objects in ONE request — PostgREST wraps it in one
+   * transaction, so a multi-object move (a draw's deck+hand pair) can never
+   * half-apply when the network fails mid-way. All entries apply optimistically
+   * at once; the response rows carry the trigger-stamped `updated_at`, which
+   * replaces the optimistic local clock (healing client clock skew without
+   * waiting for the realtime echo), and a failed request re-reads the rows so
+   * local state snaps back to the database instead of silently diverging.
+   */
+  setWorldObjects(entries: ReadonlyArray<readonly [string, WorldObjectData]>): void {
     const room = this._currentRoom();
     const by = this.supabase.userId();
-    if (!room || !by) return;
-    this.applyState(id, { data, by, t: Date.now() }); // optimistic; corrected by our own echo
-    void this.supabase.client
-      .from('world_objects')
-      .upsert({ room_id: room.id, object_id: id, data, updated_by: by })
-      .then(() => undefined);
+    if (!room || !by || entries.length === 0) return;
+    for (const [id, data] of entries) {
+      this.beginWrite(id);
+      // Force: the user's own action must show locally even if a skewed clock
+      // says an older remote write is "newer".
+      this.applyState(id, { data, by, t: Date.now() }, true);
+    }
+    const ids = entries.map(([id]) => id);
+    const rows = entries.map(([object_id, data]) => ({
+      room_id: room.id,
+      object_id,
+      data,
+      updated_by: by,
+    }));
+    this.enqueue(async () => {
+      let res: { data: unknown; error: unknown };
+      try {
+        res = await this.supabase.client
+          .from('world_objects')
+          .upsert(rows)
+          .select('object_id, data, updated_by, updated_at');
+      } finally {
+        for (const id of ids) this.endWrite(id);
+      }
+      if (this._currentRoom()?.id !== room.id) return; // left the room meanwhile
+      if (res.error) {
+        await this.resyncObjects(room.id, ids);
+        return;
+      }
+      // Adopt the authoritative rows — unless a newer write for the same
+      // object is already in flight behind this one; its ack will land later.
+      for (const row of (res.data ?? []) as WorldRow[]) {
+        if (!this.pendingWrites.has(row.object_id)) {
+          this.applyState(row.object_id, toObjectState(row), true);
+        }
+      }
+    });
   }
 
   /** Delete a shared world object (e.g. a card leaving the table). */
   removeWorldObject(id: string): void {
     const room = this._currentRoom();
     if (!room) return;
-    const prev = this._world()[id];
+    this.beginWrite(id);
     this._world.update((w) => {
       const { [id]: _, ...rest } = w;
       return rest;
     });
-    void this.supabase.client
+    this.enqueue(async () => {
+      let error: unknown;
+      try {
+        ({ error } = await this.supabase.client
+          .from('world_objects')
+          .delete()
+          .match({ room_id: room.id, object_id: id }));
+      } finally {
+        this.endWrite(id);
+      }
+      if (error && this._currentRoom()?.id === room.id) {
+        await this.resyncObjects(room.id, [id]);
+      }
+    });
+  }
+
+  private beginWrite(id: string): void {
+    this.pendingWrites.set(id, (this.pendingWrites.get(id) ?? 0) + 1);
+  }
+
+  private endWrite(id: string): void {
+    const n = this.pendingWrites.get(id) ?? 0;
+    if (n <= 1) this.pendingWrites.delete(id);
+    else this.pendingWrites.set(id, n - 1);
+  }
+
+  /** Append a world mutation to the ordered dispatch chain. */
+  private enqueue(work: () => Promise<void>): void {
+    this.writeChain = this.writeChain
+      .then(work)
+      .catch((err) => console.warn('[room] world write failed', err));
+  }
+
+  /**
+   * A world write failed: rather than guessing at a rollback, re-read the
+   * objects and adopt whatever the database holds (rows may exist with older
+   * data, or not at all). A lost request then shows up as the action visibly
+   * undone — a drawn card back on the deck — never as a card silently gone.
+   */
+  private async resyncObjects(roomId: string, ids: string[]): Promise<void> {
+    const { data, error } = await this.supabase.client
       .from('world_objects')
-      .delete()
-      .match({ room_id: room.id, object_id: id })
-      .then(({ error }) => {
-        // Restore on failure unless something newer arrived meanwhile.
-        if (error && prev && !this._world()[id]) this.applyState(id, prev);
+      .select('object_id, data, updated_by, updated_at')
+      .eq('room_id', roomId)
+      .in('object_id', ids);
+    if (error || this._currentRoom()?.id !== roomId) return; // offline — keep optimistic state
+    const rows = (data ?? []) as WorldRow[];
+    const present = new Set(rows.map((r) => r.object_id));
+    for (const row of rows) {
+      if (!this.pendingWrites.has(row.object_id)) {
+        this.applyState(row.object_id, toObjectState(row), true);
+      }
+    }
+    for (const id of ids) {
+      if (present.has(id) || this.pendingWrites.has(id)) continue;
+      this._world.update((w) => {
+        if (!(id in w)) return w;
+        const { [id]: _, ...rest } = w;
+        return rest;
       });
+    }
   }
 
   leave(): void {
@@ -199,6 +301,7 @@ export class RoomService {
     this._currentRoom.set(null);
     this._messages.set([]);
     this._world.set({});
+    this.pendingWrites.clear();
   }
 
   private send(text: string, kind: ChatKind): void {
@@ -289,6 +392,8 @@ export class RoomService {
       // The realtime filter does not apply to DELETE events, so ignore other rooms'.
       const old = change.old;
       if (!old.object_id || (old.room_id && old.room_id !== roomId)) return;
+      // A newer local write for it is in flight (deleted then re-created); its ack decides.
+      if (this.pendingWrites.has(old.object_id)) return;
       this._world.update((w) => {
         if (!(old.object_id! in w)) return w;
         const { [old.object_id!]: _, ...rest } = w;
@@ -298,11 +403,14 @@ export class RoomService {
     }
     const row = change.new;
     if (!row.object_id) return;
-    // Our own echo is adopted unconditionally so the server clock replaces the optimistic local one.
+    // Our own echo replaces the optimistic local clock with the server's — but
+    // only when no newer write is in flight, whose optimistic state an older
+    // echo must not clobber (that transient rollback lost drawn cards).
+    const own = row.updated_by === this.supabase.userId();
     this.applyState(
       row.object_id,
       toObjectState(row as WorldRow),
-      row.updated_by === this.supabase.userId(),
+      own && !this.pendingWrites.has(row.object_id),
     );
   }
 

@@ -24,8 +24,8 @@ import { SceneGraph } from './scene-graph';
 import { UtilWindow } from './util-window/util-window';
 
 /** The card table view: environment GLBs + card objects projected from the
- * room's shared world state, seen from a fixed camera (posed and subtly
- * panned by CameraRig). Picking, moving, and the context menus are handled by
+ * room's shared world state, seen from a fixed camera (posed by CameraRig).
+ * Picking, moving, and the context menus are handled by
  * CardInteractions + CardOverlay; the zone UI (hand/deck/graveyard) and the
  * add-to-game util window are DOM overlays rendered on top of the canvas. */
 @Component({

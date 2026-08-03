@@ -20,6 +20,7 @@
       </div>
 
       <div class="opp-piles">
+        <span class="mini hand-size" title="Cards in hand">✋ {{ p.hand.length }}</span>
         <span class="mini deck" title="Cards in deck">🂠 {{ p.deck.length }}</span>
         <button
           type="button"
@@ -64,6 +65,8 @@
        the screen. Drag a card onto the table to play it; right-click a card to
        reveal it; wheel over the hand to pan a hand too wide to fit. -->
   <div class="hand-clip">
+    <!-- Text count of the hand for a quick overview (stabilityandimprovements.md). -->
+    <span class="hand-count" title="Cards in hand">✋ {{ me.hand.length }}</span>
     <div class="hand" [style.transform]="handTransform()" (wheel)="onHandWheel($event)">
       @for (c of me.hand; track c.id; let i = $index) {
         <button
@@ -205,7 +208,7 @@
       @for (c of examinedCards(); track c.id) {
         <figure class="examine-card">
           @if (isMine()) {
-            <!-- Mine: drag onto the table or a zone, or use the button for the hand. -->
+            <!-- Mine: drag onto the table or any zone widget (incl. the hand). -->
             <img
               class="draggable"
               [src]="c.src"
@@ -215,7 +218,6 @@
               draggable="false"
               (pointerdown)="startDrag($event, c, examining()!.kind)"
             />
-            <button type="button" (click)="toHand(c)">To hand</button>
           } @else {
             <img [src]="c.src" [alt]="c.name" [title]="c.name" crossorigin="anonymous" />
           }

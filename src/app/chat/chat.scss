@@ -63,6 +63,30 @@ button {
   padding: 0.25rem 0.6rem;
 }
 
+// Chat / History tab switch. The active tab reads as part of the log below it.
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.tab {
+  flex: 1;
+  padding: 0.3rem 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #aaa;
+  font-size: 0.8rem;
+  font-weight: 600;
+
+  &:hover {
+    color: #ddd;
+  }
+
+  &.active {
+    background: #6c4cff;
+    color: #fff;
+  }
+}
+
 .log {
   flex: 1;
   overflow-y: auto;

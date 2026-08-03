@@ -12,6 +12,8 @@ export class FakeRoomService {
   readonly worldState = this._world.asReadonly();
   /** Action-history lines posted via sendAction, oldest first. */
   readonly actions: string[] = [];
+  /** Object ids of each setWorldObjects batch, for asserting write atomicity. */
+  readonly batches: string[][] = [];
   private clock = 1;
 
   readonly userId = signal<string | null>('user-1');
@@ -21,8 +23,15 @@ export class FakeRoomService {
   readonly seatYaw = () => (this.isRoomOwner() ? 0 : Math.PI);
 
   setWorldObject(id: string, data: WorldObjectData): void {
+    this.setWorldObjects([[id, data]]);
+  }
+
+  setWorldObjects(entries: ReadonlyArray<readonly [string, WorldObjectData]>): void {
+    this.batches.push(entries.map(([id]) => id));
     const by = this.userId() ?? '';
-    this._world.update((w) => ({ ...w, [id]: { data, by, t: this.clock++ } }));
+    for (const [id, data] of entries) {
+      this._world.update((w) => ({ ...w, [id]: { data, by, t: this.clock++ } }));
+    }
   }
 
   removeWorldObject(id: string): void {

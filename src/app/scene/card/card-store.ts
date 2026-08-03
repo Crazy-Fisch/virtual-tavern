@@ -31,7 +31,10 @@ function toData(card: CardState): WorldObjectData {
  * late joiner starts from the persisted snapshot. Writes go through
  * RoomService (optimistic, last-writer-wins). Dragging stays local via
  * `preview()` until the drop commits — remote players see the placement, not
- * every intermediate cursor position. Provided BY the Scene component.
+ * every intermediate cursor position. A card mid-play from the hand is more
+ * private still: `addLocal()` keeps it entirely on this client until the drop
+ * lands (`update()` promotes it), so other players never see a card that was
+ * merely considered. Provided BY the Scene component.
  */
 @Injectable()
 export class CardStore {
@@ -39,16 +42,21 @@ export class CardStore {
 
   /** Local-only overrides (drag pose) layered over the shared state. */
   private readonly previews = signal<Record<string, Partial<CardState>>>({});
+  /** Cards that exist only on this client (a hand card mid-drag). */
+  private readonly locals = signal<Record<string, CardState>>({});
 
   readonly cards = computed<CardState[]>(() => {
     const previews = this.previews();
-    return Object.entries(this.room.worldState())
+    const world = this.room.worldState();
+    const shared = Object.entries(world)
       .filter(([id]) => id.startsWith(CARD_PREFIX))
-      .map(([id, state]) => {
-        const card = toCard(id, state.data);
-        const preview = previews[id];
-        return preview ? { ...card, ...preview } : card;
-      });
+      .map(([id, state]) => toCard(id, state.data));
+    // A local card shadowed by the shared world (its own promotion) is dropped.
+    const locals = Object.values(this.locals()).filter((c) => !(c.id in world));
+    return [...shared, ...locals].map((card) => {
+      const preview = previews[card.id];
+      return preview ? { ...card, ...preview } : card;
+    });
   });
 
   /** Snapshot lookup; reactive when called inside a computed/effect. */
@@ -60,12 +68,34 @@ export class CardStore {
     this.room.setWorldObject(card.id, toData(card));
   }
 
-  /** Commit a change to the shared state (clears any local preview). */
+  /**
+   * Add a card only this client sees — a card leaving the hand under the
+   * cursor. Nothing reaches the network until `update()` commits it (the drop
+   * landing), so a player can pick a card up, think better of it, and put it
+   * back without the other players ever seeing what it was
+   * (stabilityandimprovements.md "game stability").
+   */
+  addLocal(card: CardState): void {
+    this.locals.update((l) => ({ ...l, [card.id]: card }));
+  }
+
+  /** Commit a change to the shared state (clears any local preview; promotes
+   * a local-only card into the shared world). */
   update(id: string, patch: Partial<Omit<CardState, 'id'>>): void {
-    const card = this.card(id);
-    if (!card) return;
-    this.clearPreview(id);
-    this.room.setWorldObject(id, toData({ ...card, ...patch }));
+    this.updateMany([[id, patch]]);
+  }
+
+  /** Commit several cards in one shared write — a group drop lands atomically. */
+  updateMany(entries: ReadonlyArray<readonly [string, Partial<Omit<CardState, 'id'>>]>): void {
+    const writes: [string, WorldObjectData][] = [];
+    for (const [id, patch] of entries) {
+      const card = this.card(id);
+      if (!card) continue;
+      this.clearPreview(id);
+      this.locals.update(({ [id]: _, ...rest }) => rest);
+      writes.push([id, toData({ ...card, ...patch })]);
+    }
+    if (writes.length) this.room.setWorldObjects(writes);
   }
 
   /** Local-only override while dragging; update() commits it, clearPreview() discards it. */
@@ -80,9 +110,15 @@ export class CardStore {
   /**
    * Delete the card from the shared state. Dangling relatedIds in other cards
    * are tolerated — lookups resolve them to undefined and filter them out.
+   * A card that never left this client (addLocal, e.g. a reverted hand play)
+   * is simply discarded — the network never saw it.
    */
   remove(id: string): void {
     this.clearPreview(id);
+    if (id in this.locals()) {
+      this.locals.update(({ [id]: _, ...rest }) => rest);
+      if (!(id in this.room.worldState())) return;
+    }
     this.room.removeWorldObject(id);
   }
 }

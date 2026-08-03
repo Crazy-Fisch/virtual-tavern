@@ -323,6 +323,21 @@ button.mini {
   pointer-events: none;
 }
 
+// Text hand count, bottom-left inside the clip — the fan stays centred, so the
+// corner is free (stabilityandimprovements.md "game ui").
+.hand-count {
+  @extend %panel;
+  position: absolute;
+  bottom: calc(0.5 * var(--u));
+  left: calc(0.5 * var(--u));
+  z-index: 3;
+  padding: calc(0.2 * var(--u)) calc(0.6 * var(--u));
+  border-radius: calc(0.4 * var(--u));
+  font-size: calc(0.9 * var(--u));
+  font-weight: 700;
+  color: #cfc4ff;
+}
+
 .hand {
   position: absolute;
   bottom: calc(0.4 * var(--u));
@@ -519,10 +534,13 @@ button.mini {
 // ---------- dragged-card ghost ----------
 // Fixed at the cursor above every overlay; non-interactive so drop routing's
 // elementFromPoint still sees the zone beneath it. Card-back look when face-down.
+// Width matches the 3D card's on-screen size (CARD_SCALE in card.ts: 0.635 ·
+// 0.75 / 4.2 of the viewport height = 6.38 --u), so a card neither grows nor
+// shrinks when picked up.
 .drag-ghost {
   position: fixed;
   z-index: 60;
-  width: calc(8.4 * var(--u));
+  width: calc(6.38 * var(--u));
   aspect-ratio: 63 / 88;
   transform: translate(-50%, -50%);
   border-radius: calc(0.4 * var(--u));
@@ -605,20 +623,6 @@ button.mini {
       cursor: grab;
       touch-action: none;
       user-select: none;
-    }
-  }
-
-  button {
-    padding: 0.25rem 0.4rem;
-    border: none;
-    border-radius: 0.35rem;
-    background: #6c4cff;
-    color: #fff;
-    font-size: 0.75rem;
-    cursor: pointer;
-
-    &:hover {
-      background: #7d61ff;
     }
   }
 }

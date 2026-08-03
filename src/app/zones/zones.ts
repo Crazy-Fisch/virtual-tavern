@@ -330,7 +330,9 @@ export class Zones implements OnDestroy {
     const taken = this.zones.playFromHand(card.id);
     if (!taken) return;
     const id = newCardId();
-    this.cards.add({
+    // Local-only until the drop commits: other players must not see a card
+    // that is merely being considered (stabilityandimprovements.md).
+    this.cards.addLocal({
       id,
       name: taken.name,
       // A card put into play resolves missing art against the card database
@@ -363,7 +365,7 @@ export class Zones implements OnDestroy {
     const taken = this.zones.removeFromZone(kind, card.id);
     if (!taken) return;
     const id = newCardId();
-    this.cards.add({
+    this.cards.addLocal({
       id,
       name: taken.name,
       src: taken.src || (this.db.lookup(taken.name)?.src ?? ''),
@@ -403,11 +405,6 @@ export class Zones implements OnDestroy {
   protected examine(uid: string, kind: OpenZoneKind): void {
     this.menu.set(null);
     this.examining.set({ uid, kind });
-  }
-
-  protected toHand(card: ZoneCard): void {
-    const open = this.examining();
-    if (open) this.zones.takeToHand(open.kind, card.id);
   }
 
   /** Close the open pile / hand menus when clicking anywhere outside them. */

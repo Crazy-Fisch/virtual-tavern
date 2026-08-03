@@ -1,5 +1,6 @@
 import { Component, OnDestroy, effect, inject, input, untracked } from '@angular/core';
 import {
+  Box3,
   BufferGeometry,
   Group,
   Mesh,
@@ -8,6 +9,7 @@ import {
   Sprite,
   SpriteMaterial,
   Texture,
+  Vector3,
 } from 'three';
 import { AssetLoaderService } from '../asset-loader.service';
 import { CardInteractions } from '../card/card-interactions';
@@ -15,6 +17,9 @@ import { CardStore } from '../card/card-store';
 import { ITEM_MODEL_URLS } from '../scene-assets';
 import { SceneGraph } from '../scene-graph';
 import {
+  COIN_RADIUS,
+  COUNTER_RADIUS,
+  DIE_RADIUS,
   makeCoinGeometry,
   makeCoinTextures,
   makeCounterGeometry,
@@ -24,7 +29,7 @@ import {
   makeValueTexture,
   restLift,
 } from './item-geometry';
-import { ItemState, isDice } from './item.types';
+import { ItemKind, ItemState, isDice } from './item.types';
 
 /** Slight white tint (emissive) applied while hovered, matching cards. */
 const HOVER_TINT = 0x333333;
@@ -41,6 +46,13 @@ const FLIP_HOP = 0.5;
 /** Placeholder body colours per kind. */
 const DICE_COLOR = 0xe8e3d6;
 const COIN_EDGE_COLOR = 0xb99442;
+
+/** Largest dimension a registered GLB is normalised to, matching the placeholder. */
+function modelTargetSize(kind: ItemKind): number {
+  if (kind === 'coin') return COIN_RADIUS * 2;
+  if (kind === 'counter') return COUNTER_RADIUS * 2;
+  return DIE_RADIUS * 2;
+}
 
 /**
  * A single table item — die, coin or counter — rendering the ItemState it
@@ -167,12 +179,34 @@ export class Item implements OnDestroy {
       try {
         const model = (await this.assets.load(url)).clone();
         this.claimMaterials(model);
+        this.normalizeModel(model, state.kind);
         return model;
       } catch (err) {
         console.warn(`[item] Model ${url} unavailable, using the placeholder.`, err);
       }
     }
     return this.buildPlaceholder(state);
+  }
+
+  /**
+   * Fit a registered model to the placeholder's size and resting pose whatever
+   * scale or origin it was authored at: uniformly scaled so its largest
+   * dimension matches the placeholder's, centred on its bounding box (rolls
+   * tumble about the middle), with the pivot lift recomputed so it rests on
+   * the surface. The provided d4.glb, for instance, is authored ~1.7 m wide —
+   * raw, it dwarfed the table (stabilityandimprovements.md "items").
+   */
+  private normalizeModel(model: Object3D, kind: ItemKind): void {
+    const box = new Box3().setFromObject(model);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new Vector3());
+    const largest = Math.max(size.x, size.y, size.z);
+    if (largest <= 0) return;
+    const scale = modelTargetSize(kind) / largest;
+    model.scale.multiplyScalar(scale);
+    model.position.sub(box.getCenter(new Vector3()).multiplyScalar(scale));
+    this.lift = (size.y * scale) / 2;
+    if (this.pivot) this.pivot.position.y = this.lift;
   }
 
   private buildPlaceholder(state: ItemState): Object3D {
@@ -224,7 +258,15 @@ export class Item implements OnDestroy {
     node.traverse((obj) => {
       if (!(obj instanceof Mesh)) return;
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      const owned = materials.map((m) => this.own((m as MeshStandardMaterial).clone()));
+      const owned = materials.map((m) => {
+        const clone = this.own((m as MeshStandardMaterial).clone());
+        // A glTF primitive with no material gets the spec default: white at
+        // FULL metalness — which renders near-black without an environment
+        // map (the invisible d4). Treat such untextured full-metal surfaces
+        // as plain matte instead.
+        if (clone.metalness === 1 && !clone.metalnessMap) clone.metalness = 0.1;
+        return clone;
+      });
       obj.material = Array.isArray(obj.material) ? owned : owned[0]!;
     });
   }
