@@ -41,6 +41,26 @@ export class CardDbCache {
     }
   }
 
+  /** Best-effort delete — a missing key or unavailable IndexedDB is fine. */
+  async delete(key: string): Promise<void> {
+    if (typeof indexedDB === 'undefined') return;
+    try {
+      const db = await this.open();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readwrite');
+          tx.objectStore(STORE).delete(key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } finally {
+        db.close();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   private open(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);

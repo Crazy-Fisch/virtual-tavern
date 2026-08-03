@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { CardApiService } from '../carddb/card-api.service';
 import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
 import { Dialog } from '../shared/dialog/dialog';
 import { DeckStore } from './deck-store';
@@ -28,6 +29,7 @@ type DeckMenu = { deck: Deck; x: number; y: number };
 export class Decks {
   protected readonly store = inject(DeckStore);
   protected readonly db = inject(CardDatabaseService);
+  protected readonly api = inject(CardApiService);
   protected readonly deckSize = deckSize;
 
   protected readonly name = signal('');
@@ -38,8 +40,14 @@ export class Decks {
   protected readonly viewing = signal<Deck | null>(null);
   /** In-flight rename: the deck plus the edited name text, or null when closed. */
   protected readonly renaming = signal<{ id: string; name: string } | null>(null);
+  /** The card-API modal's text field, or null while the modal is closed. */
+  protected readonly apiDraft = signal<string | null>(null);
+  protected readonly apiError = signal<string | null>(null);
 
   protected readonly dbLabel = computed(() => {
+    if (!this.api.configured()) {
+      return 'No card API deposited — card search and images are unavailable';
+    }
     switch (this.db.status()) {
       case 'ready':
         return `Card database ready — ${this.db.cardCount().toLocaleString()} cards`;
@@ -116,6 +124,24 @@ export class Decks {
     const menu = this.menu();
     if (menu) this.store.remove(menu.deck.id);
     this.menu.set(null);
+  }
+
+  /** Open the deposit modal, prefilled with the current API for editing. */
+  protected openApiDialog(): void {
+    this.apiError.set(null);
+    this.apiDraft.set(this.api.apiUrl() ?? '');
+  }
+
+  protected onApiInput(event: Event): void {
+    this.apiDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected async saveApi(): Promise<void> {
+    const draft = this.apiDraft();
+    if (draft === null) return;
+    const err = await this.api.setApiUrl(draft);
+    this.apiError.set(err);
+    if (!err) this.apiDraft.set(null);
   }
 
   /** Close the tile menu when clicking anywhere outside it. */

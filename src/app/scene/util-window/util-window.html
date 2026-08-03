@@ -6,7 +6,8 @@
     </header>
 
     <!-- Game items: dice and counters open a second row of choices, the coin
-         drops straight onto the table. -->
+         has only one. A pick attaches the item to the cursor; clicking the
+         table places it (tableitems.md). -->
     <div class="items">
       <button type="button" class="group" (click)="toggleGroup('dice')">
         Dice <span class="chevron">{{ openGroup() === 'dice' ? '▾' : '▸' }}</span>

@@ -49,6 +49,33 @@
   color: #999;
 }
 
+// Deposit/edit the card API (legal.md) — highlighted while none is set,
+// since no card data works without it.
+.api-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #2e2e3a;
+  border-radius: 0.5rem;
+  background: #1b1b24;
+  color: #eee;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #6c4cff;
+  }
+
+  &.attention {
+    border-color: #6c4cff;
+    background: #6c4cff;
+    color: #fff;
+
+    &:hover {
+      background: #7d61ff;
+    }
+  }
+}
+
 .content {
   display: flex;
   gap: 2rem;
@@ -300,6 +327,68 @@
     &:disabled {
       opacity: 0.5;
       cursor: default;
+    }
+  }
+}
+
+// ---------- card API dialog (projected into app-dialog, styled here) ----------
+.api-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  .api-hint {
+    margin: 0;
+    color: #999;
+    font-size: 0.85rem;
+  }
+
+  input {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #2e2e3a;
+    border-radius: 0.5rem;
+    background: #1b1b24;
+    color: #eee;
+    font: inherit;
+
+    &:focus {
+      outline: none;
+      border-color: #6c4cff;
+    }
+  }
+
+  .error {
+    margin: 0;
+    color: #ff8a8a;
+    font-size: 0.85rem;
+  }
+
+  .api-actions {
+    display: flex;
+    gap: 0.5rem;
+
+    button {
+      padding: 0.5rem 0.9rem;
+      border: 1px solid #2e2e3a;
+      border-radius: 0.5rem;
+      background: #1b1b24;
+      color: #eee;
+      font: inherit;
+      cursor: pointer;
+
+      &:hover {
+        border-color: #6c4cff;
+      }
+
+      &.primary {
+        border: none;
+        background: #6c4cff;
+        color: #fff;
+
+        &:hover {
+          background: #7d61ff;
+        }
+      }
     }
   }
 }

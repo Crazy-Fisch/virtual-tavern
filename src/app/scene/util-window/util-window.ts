@@ -1,19 +1,12 @@
 import { Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
+import { CardApiService } from '../../carddb/card-api.service';
 import { RoomService } from '../../room/room.service';
 import { ZoneStore } from '../../zones/zone-store';
-import { CardInteractions, UtilAnchor } from '../card/card-interactions';
+import { CardInteractions, DRAG_Y, UtilAnchor } from '../card/card-interactions';
 import { CardHit, CardSearchService } from '../card/card-search.service';
 import { CardStore } from '../card/card-store';
 import { newCardId } from '../card/card.types';
-import { ItemStore } from '../item/item-store';
-import {
-  CounterVariant,
-  DICE_KINDS,
-  DiceKind,
-  ItemKind,
-  itemLabel,
-  newItem,
-} from '../item/item.types';
+import { CounterVariant, DICE_KINDS, DiceKind, ItemKind, newItem } from '../item/item.types';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY = 2;
@@ -28,7 +21,8 @@ function jitter(): number {
  * right-clicking empty table (CardInteractions owns the open/close state and
  * the world position where added objects appear): the game items — dice
  * (d4/d6/d12/d20), a coin, and +1/+1 or −1/−1 counters, each behind its own
- * expanding row — above a card search (Scryfall) with a scrollable 3-wide
+ * expanding row — above a card search (against the user-deposited card API,
+ * see legal.md) with a scrollable 3-wide
  * result grid, where each hit can go to the table, my hand, or on top of my deck.
  */
 @Component({
@@ -40,8 +34,8 @@ function jitter(): number {
 export class UtilWindow {
   protected readonly interactions = inject(CardInteractions);
   private readonly searchService = inject(CardSearchService);
+  private readonly api = inject(CardApiService);
   private readonly cards = inject(CardStore);
-  private readonly items = inject(ItemStore);
   private readonly zones = inject(ZoneStore);
   private readonly room = inject(RoomService);
 
@@ -63,6 +57,13 @@ export class UtilWindow {
         this.results.set([]);
         this.searching.set(false);
         this.error.set(null);
+        return;
+      }
+      // Card search needs the user-deposited API (legal.md).
+      if (!this.api.configured()) {
+        this.results.set([]);
+        this.searching.set(false);
+        this.error.set('No card API set — add one on the Decks screen.');
         return;
       }
       const controller = new AbortController();
@@ -130,14 +131,17 @@ export class UtilWindow {
     this.addItem('counter', variant);
   }
 
-  /** Spawn a game item where the table was right-clicked, and close the window. */
+  /**
+   * Hand a fresh item to the cursor (tableitems.md): it starts in the dragged
+   * state — local to this client, floating at the right-clicked spot until the
+   * mouse moves — and a click on the table places it, which is when it reaches
+   * the other players and the history.
+   */
   private addItem(kind: ItemKind, variant: CounterVariant = 'plus'): void {
     const anchor = this.interactions.utilWindow();
     if (!anchor) return;
-    const [x, y, z] = anchor.world;
-    const item = newItem(kind, [x + jitter(), y, z + jitter()], variant);
-    this.items.add(item);
-    this.room.sendAction(`added a ${itemLabel(item)}`);
+    const [x, , z] = anchor.world;
+    this.interactions.beginSpawnDrag(newItem(kind, [x, DRAG_Y, z], variant));
     this.close();
   }
 

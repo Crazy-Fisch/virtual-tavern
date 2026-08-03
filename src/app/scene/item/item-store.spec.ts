@@ -139,6 +139,25 @@ describe('ItemStore', () => {
     expect(store.items().map((i) => i.id)).toEqual([loose.id]);
   });
 
+  it('a local item stays off the network until update() promotes it (tableitems.md)', () => {
+    const item = newItem('d6', [0, 0.5, 0]);
+    store.addLocal(item);
+    expect(store.item(item.id)).toBeDefined(); // visible on this client…
+    expect(room.worldState()[item.id]).toBeUndefined(); // …but never sent
+    store.update(item.id, { position: [1, 0.21, 2] });
+    expect(room.worldState()[item.id]).toBeDefined();
+    expect(store.item(item.id)!.position).toEqual([1, 0.21, 2]);
+  });
+
+  it('removing a still-local item discards it without a network write', () => {
+    const item = newItem('coin', [0, 0.5, 0]);
+    store.addLocal(item);
+    store.remove(item.id);
+    expect(store.item(item.id)).toBeUndefined();
+    expect(room.worldState()[item.id]).toBeUndefined();
+    expect(room.actions).toEqual([]);
+  });
+
   it('previews are local overrides that update() commits and clearPreview() discards', () => {
     const die = spawn('d6');
     store.preview(die.id, { position: [1, 0.5, 2] });

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, vi } from 'vitest';
+import { CardApiService } from '../../carddb/card-api.service';
 import { CardSearchService } from './card-search.service';
 
 function scryfallResponse(status: number, body: unknown): Response {
@@ -13,11 +14,16 @@ function scryfallResponse(status: number, body: unknown): Response {
 describe('CardSearchService', () => {
   let service: CardSearchService;
   let fetchMock: ReturnType<typeof vi.fn>;
+  /** The user-deposited API base (legal.md); null = nothing deposited. */
+  let apiUrl: string | null;
 
   beforeEach(() => {
+    apiUrl = 'https://api.example.com';
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [{ provide: CardApiService, useValue: { apiUrl: () => apiUrl } }],
+    });
     service = TestBed.inject(CardSearchService);
   });
 
@@ -37,7 +43,15 @@ describe('CardSearchService', () => {
       { name: 'Water Worm', src: 'https://img/worm.jpg' },
       { name: 'Delver', src: 'https://img/delver.jpg' },
     ]);
+    // The query goes to the deposited API, not any baked-in endpoint.
+    expect(fetchMock.mock.calls[0]![0]).toContain('https://api.example.com/cards/search');
     expect(fetchMock.mock.calls[0]![0]).toContain('q=worm');
+  });
+
+  it('refuses to search while no API has been deposited (legal.md)', async () => {
+    apiUrl = null;
+    await expect(service.search('worm')).rejects.toThrow('No card API deposited');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('caches per query and skips queries under 2 characters', async () => {

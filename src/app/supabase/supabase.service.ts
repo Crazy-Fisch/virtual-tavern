@@ -57,6 +57,16 @@ export class SupabaseService {
     await this.client.auth.updateUser({ data: { display_name: name } });
   }
 
+  /**
+   * A registered user's card-API base URL lives in their account info (auth
+   * user_metadata) — see CardApiService, which owns the guest/session logic.
+   * Returns an error message, or null on success.
+   */
+  async setCardApiUrl(url: string): Promise<string | null> {
+    const { error } = await this.client.auth.updateUser({ data: { card_api_url: url } });
+    return error?.message ?? null;
+  }
+
   async signOut(): Promise<void> {
     await this.client.auth.signOut();
   }

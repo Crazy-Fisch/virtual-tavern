@@ -4,7 +4,7 @@ import { RoomService } from '../../room/room.service';
 import { ZoneStore } from '../../zones/zone-store';
 import { ZoneKind } from '../../zones/zone.types';
 import { ItemStore } from '../item/item-store';
-import { ItemAction, isItemId, itemLabel } from '../item/item.types';
+import { ItemAction, ItemState, isItemId, itemLabel } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
 import { CardStore } from './card-store';
 import { CardAction, CardState, GROUP_ACTIONS } from './card.types';
@@ -149,6 +149,9 @@ export class CardInteractions {
   private marqueeStart: { x: number; y: number } | null = null;
   /** Set while the active drag came from the hand UI (missed drop → revert). */
   private handDrag: HandDragHooks | null = null;
+  /** Set while the active drag is a fresh util-window spawn, which is placed by
+   * a *click* (the button is not held) instead of releasing it. */
+  private spawnDrag = false;
   /** Table point the active drag started from, for moving a whole selection. */
   private dragOrigin: Vector3 | null = null;
   /** The other selected cards travelling with the dragged one, and where they started. */
@@ -259,11 +262,31 @@ export class CardInteractions {
     this.dragGhost.set(null);
     this.dragGroup = [];
     this.dragOrigin = null;
+    this.spawnDrag = false;
   }
 
   private dropTargetAt(x: number, y: number): CardDropTarget | null {
     for (const target of this.dropTargets) if (target.hitTest(x, y)) return target;
     return null;
+  }
+
+  /**
+   * Spawn a new item already attached to the cursor (tableitems.md): it exists
+   * only on this client (ItemStore.addLocal) and follows the pointer until a
+   * click on the table — or a card, which is how a spawned counter attaches —
+   * places it. That promotion into the shared world is the first thing other
+   * players see; Escape before it discards the item without a trace.
+   */
+  beginSpawnDrag(item: ItemState): void {
+    this.pressed = null;
+    this.marqueeStart = null;
+    this.hoveredId.set(null);
+    this.clearSelection();
+    this.items.addLocal(item);
+    this.draggingId.set(item.id);
+    this.dragOrigin = null;
+    this.dragGroup = [];
+    this.spawnDrag = true;
   }
 
   /**
@@ -409,7 +432,13 @@ export class CardInteractions {
   };
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || this.draggingId()) return;
+    if (event.button !== 0) return;
+    const draggingId = this.draggingId();
+    if (draggingId) {
+      // A spawn following the cursor lands on click (a miss keeps it attached).
+      if (this.spawnDrag) this.placeSpawn(draggingId, event);
+      return;
+    }
     this.contextMenu.set(null);
     this.itemMenu.set(null);
     this.relatedPanel.set(null);
@@ -440,6 +469,8 @@ export class CardInteractions {
     }
     const draggingId = this.draggingId();
     if (draggingId) {
+      // A spawn is placed by the *click* (pointerdown), never by a release.
+      if (this.spawnDrag) return;
       const handDrag = this.handDrag;
       this.handDrag = null;
       // A drop over a UI zone (hand/deck/graveyard/exile) sends the card there,
@@ -532,13 +563,16 @@ export class CardInteractions {
       this.marquee.set(null);
       const draggingId = this.draggingId();
       if (draggingId) {
-        // Cancel the move: back to the shared state (table pose) or, for a
-        // card being played from the hand, back into the hand.
+        // Cancel the move: back to the shared state (table pose); a card being
+        // played from the hand goes back into the hand; an unplaced spawn is
+        // discarded entirely — the network never saw it.
         const handDrag = this.handDrag;
         this.handDrag = null;
-        if (!handDrag) this.clearDragPreviews(draggingId); // before endDrag drops the group
+        const spawnDrag = this.spawnDrag;
+        if (!handDrag && !spawnDrag) this.clearDragPreviews(draggingId); // before endDrag drops the group
         this.endDrag();
         if (handDrag) handDrag.revert();
+        if (spawnDrag) this.items.remove(draggingId);
       }
       this.clearSelection();
       this.contextMenu.set(null);
@@ -665,6 +699,17 @@ export class CardInteractions {
     this.store.updateMany(writes);
     this.endDrag();
     return true;
+  }
+
+  /**
+   * Click during a spawn drag: place the item where the cursor ray lands and
+   * log the add — the moment the other players first see it. A click that hits
+   * nothing placeable leaves the item on the cursor.
+   */
+  private placeSpawn(id: string, event: PointerEvent): void {
+    const item = this.items.item(id);
+    if (!item) return;
+    if (this.tryPlace(id, event)) this.room.sendAction(`added a ${itemLabel(item)}`);
   }
 
   /**

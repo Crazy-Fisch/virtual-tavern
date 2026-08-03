@@ -14,6 +14,9 @@ import {
 const MAX_CHAT = 100;
 /** localStorage key holding the room to rejoin after a reload without an explicit Leave. */
 const RESUME_KEY = 'virtual-tavern.resume';
+/** How often a joined client refreshes rooms.last_active (the keep-alive that
+ * spares the room from the server-side stale sweep). */
+const HEARTBEAT_MS = 5 * 60_000;
 
 type ResumeState = { code: string; displayName: string };
 
@@ -69,6 +72,10 @@ export class RoomService {
   private readonly _messages = signal<ChatMessage[]>([]);
   private readonly _world = signal<WorldState>({});
   private channel?: RealtimeChannel;
+  /** This tab's realtime presence key; per-tab so two tabs of one account count twice. */
+  private presenceKey?: string;
+  /** Keep-alive timer stamping rooms.last_active while joined. */
+  private heartbeat?: ReturnType<typeof setInterval>;
   /** Count of in-flight world writes (upserts/deletes) per object id. */
   private readonly pendingWrites = new Map<string, number>();
   /** World mutations dispatch in order — a later request can never overtake an
@@ -293,15 +300,46 @@ export class RoomService {
 
   leave(): void {
     localStorage.removeItem(RESUME_KEY);
+    if (this.heartbeat !== undefined) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
+    }
+    const room = this._currentRoom();
+    // Decide before the channel goes down whether anyone else is still here.
+    const lastOut = room !== null && this.aloneInRoom();
     if (this.channel) {
       void this.supabase.client.removeChannel(this.channel);
       this.channel = undefined;
     }
+    this.presenceKey = undefined;
     this.p2p.leave();
     this._currentRoom.set(null);
     this._messages.set([]);
     this._world.set({});
     this.pendingWrites.clear();
+    // The last player out closes the room: the row and — via the FK cascades —
+    // all its chat/history messages and world objects leave the database.
+    if (lastOut && room) void this.rpcQuiet('close_room', { p_room_id: room.id });
+  }
+
+  /**
+   * Whether realtime presence shows this tab as the only player on the room
+   * channel. Presence must have synced (my own key visible) — an unsynced or
+   * dead channel reports "not alone", leaving the room to the server-side
+   * stale sweep instead of guessing.
+   */
+  private aloneInRoom(): boolean {
+    if (!this.channel || !this.presenceKey) return false;
+    const keys = Object.keys(this.channel.presenceState());
+    return keys.length === 1 && keys[0] === this.presenceKey;
+  }
+
+  /** Fire an RPC whose result (and failure — e.g. offline) is irrelevant. */
+  private rpcQuiet(fn: string, args?: Record<string, unknown>): Promise<void> {
+    return Promise.resolve(this.supabase.client.rpc(fn, args)).then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   private send(text: string, kind: ChatKind): void {
@@ -354,8 +392,11 @@ export class RoomService {
       world[row.object_id] = toObjectState(row);
     this._world.set(world);
 
-    this.channel = client
-      .channel(`room-${room.id}`)
+    // Presence answers "am I the last one out?" when leaving. The key is
+    // per-tab, so two tabs of the same account count as two players.
+    this.presenceKey = crypto.randomUUID();
+    const channel = client
+      .channel(`room-${room.id}`, { config: { presence: { key: this.presenceKey } } })
       .on(
         'postgres_changes',
         {
@@ -370,11 +411,24 @@ export class RoomService {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'world_objects', filter: `room_id=eq.${room.id}` },
         (payload) => this.onWorldChange(payload as unknown as WorldChange, room.id),
-      )
-      .subscribe();
+      );
+    this.channel = channel;
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') void channel.track({ uid: this.supabase.userId() });
+    });
 
     this.p2p.join(room.id, name);
     this._currentRoom.set(room);
+    // The room is alive again: stamp it first (so the sweep can never hit the
+    // room being joined), then opportunistically sweep rooms whose players
+    // vanished without leaving, then keep stamping while we stay.
+    void this.rpcQuiet('touch_room', { p_room_id: room.id }).then(() =>
+      this.rpcQuiet('cleanup_stale_rooms'),
+    );
+    this.heartbeat = setInterval(
+      () => void this.rpcQuiet('touch_room', { p_room_id: room.id }),
+      HEARTBEAT_MS,
+    );
     const resume: ResumeState = { code: room.code, displayName: name };
     localStorage.setItem(RESUME_KEY, JSON.stringify(resume));
     return null;

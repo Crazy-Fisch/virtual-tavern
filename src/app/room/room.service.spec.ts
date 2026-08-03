@@ -33,21 +33,34 @@ function setup(
 ) {
   const tables = opts.tables ?? {};
   const handlers: Record<string, (payload: ChangePayload) => void> = {};
+  /** Realtime presence on the room channel; tests fill it to shape leave(). */
+  const presence: Record<string, unknown[]> = {};
+  let presenceKey = '';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const channel: any = {
     on: vi.fn((_ev: string, filter: { table: string }, cb: (p: ChangePayload) => void) => {
       handlers[filter.table] = cb;
       return channel;
     }),
-    subscribe: vi.fn(() => channel),
+    subscribe: vi.fn((cb?: (status: string) => void) => {
+      cb?.('SUBSCRIBED');
+      return channel;
+    }),
+    track: vi.fn(async () => 'ok'),
+    presenceState: vi.fn(() => presence),
   };
   const client = {
     from: vi.fn((table: string) => {
       const queued = (tables[table] ?? []).shift();
       return makeQuery(queued ?? { data: [], error: null });
     }),
-    rpc: vi.fn(async () => opts.rpc ?? { data: [], error: null }),
-    channel: vi.fn(() => channel),
+    rpc: vi.fn(async (_fn: string, _args?: Record<string, unknown>) => {
+      return opts.rpc ?? { data: [], error: null };
+    }),
+    channel: vi.fn((_name: string, chanOpts?: { config?: { presence?: { key?: string } } }) => {
+      presenceKey = chanOpts?.config?.presence?.key ?? '';
+      return channel;
+    }),
     removeChannel: vi.fn(),
   };
   const supabase = {
@@ -63,13 +76,22 @@ function setup(
       { provide: P2pService, useValue: p2p },
     ],
   });
-  return { service: TestBed.inject(RoomService), client, handlers, p2p };
+  return {
+    service: TestBed.inject(RoomService),
+    client,
+    channel,
+    handlers,
+    p2p,
+    presence,
+    presenceKey: () => presenceKey,
+  };
 }
 
 const flush = () => new Promise((r) => setTimeout(r));
 
 describe('RoomService', () => {
   beforeEach(() => localStorage.clear());
+  afterEach(() => vi.useRealTimers());
   it('returns an error for an unknown room code without joining', async () => {
     const { service, p2p } = setup({ rpc: { data: [], error: null } });
     expect(await service.joinByCode('NOPE99', 'Tim')).toBe('Room not found');
@@ -432,5 +454,63 @@ describe('RoomService', () => {
     expect(service.worldState()).toEqual({});
     expect(client.removeChannel).toHaveBeenCalled();
     expect(p2p.leave).toHaveBeenCalled();
+  });
+
+  describe('room lifecycle (perstistance.md)', () => {
+    const closeCalls = (client: { rpc: ReturnType<typeof vi.fn> }) =>
+      client.rpc.mock.calls.filter(([fn]) => fn === 'close_room');
+
+    it('the last player leaving closes the room (chat and world cascade server-side)', async () => {
+      const { service, client, presence, presenceKey } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      presence[presenceKey()] = [{ uid: 'user-1' }]; // presence synced: only me
+
+      service.leave();
+      expect(closeCalls(client)).toEqual([['close_room', { p_room_id: 'r1' }]]);
+    });
+
+    it('leaving while someone else is still present does not close the room', async () => {
+      const { service, client, presence, presenceKey } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      presence[presenceKey()] = [{ uid: 'user-1' }];
+      presence['other-tab'] = [{ uid: 'u2' }];
+
+      service.leave();
+      expect(closeCalls(client)).toEqual([]);
+    });
+
+    it('leaving before presence ever synced leaves the room to the stale sweep', async () => {
+      const { service, client } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      // presence stays empty: this tab never saw itself on the channel
+
+      service.leave();
+      expect(closeCalls(client)).toEqual([]);
+    });
+
+    it('joining tracks presence, stamps the room alive, and sweeps stale rooms', async () => {
+      const { service, client, channel, presenceKey } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      expect(presenceKey()).not.toBe(''); // a per-tab presence key was configured
+      expect(channel.track).toHaveBeenCalledWith({ uid: 'user-1' });
+      expect(client.rpc).toHaveBeenCalledWith('touch_room', { p_room_id: 'r1' });
+      await flush();
+      expect(client.rpc).toHaveBeenCalledWith('cleanup_stale_rooms', undefined);
+    });
+
+    it('a heartbeat keeps stamping the room while joined and stops on leave', async () => {
+      vi.useFakeTimers(); // before the join, so the interval is a fake timer
+      const { service, client } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      const touches = () => client.rpc.mock.calls.filter(([fn]) => fn === 'touch_room').length;
+      const before = touches();
+
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(touches()).toBe(before + 1);
+
+      service.leave();
+      vi.advanceTimersByTime(30 * 60_000);
+      expect(touches()).toBe(before + 1); // heartbeat stopped with the room
+    });
   });
 });

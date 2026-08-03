@@ -7,6 +7,9 @@
     }
     <h1>{{ viewing()?.name || 'Decks' }}</h1>
     <span class="db-status">{{ dbLabel() }}</span>
+    <button type="button" class="api-btn" [class.attention]="!api.configured()" (click)="openApiDialog()">
+      {{ api.configured() ? 'Change card API' : 'Add card API' }}
+    </button>
   </header>
 
   @if (viewing(); as deck) {
@@ -104,6 +107,32 @@
         maxlength="60"
       />
       <button type="submit" class="primary" [disabled]="!r.name.trim()">Save</button>
+    </form>
+  </app-dialog>
+}
+
+@if (apiDraft() !== null) {
+  <app-dialog heading="Card API" (close)="apiDraft.set(null)">
+    <form class="api-form" (submit)="$event.preventDefault(); saveApi()">
+      <p class="api-hint">
+        VirtualTavern ships without a card data API of its own. Deposit the base URL of a
+        Scryfall-compatible API to enable card search and card images. It is saved to your
+        account — as a guest, only for this browser session.
+      </p>
+      <input
+        type="url"
+        placeholder="https://api.example.com"
+        [value]="apiDraft()"
+        (input)="onApiInput($event)"
+        autofocus
+      />
+      @if (apiError(); as e) {
+        <p class="error">{{ e }}</p>
+      }
+      <div class="api-actions">
+        <button type="submit" class="primary">{{ api.configured() ? 'Save' : 'Add' }}</button>
+        <button type="button" (click)="apiDraft.set(null)">Cancel</button>
+      </div>
     </form>
   </app-dialog>
 }

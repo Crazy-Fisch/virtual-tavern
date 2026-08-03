@@ -54,16 +54,21 @@ export class ItemStore {
 
   /** Local-only overrides (drag pose) layered over the shared state. */
   private readonly previews = signal<Record<string, Partial<ItemState>>>({});
+  /** Items that exist only on this client (a fresh spawn still on the cursor). */
+  private readonly locals = signal<Record<string, ItemState>>({});
 
   readonly items = computed<ItemState[]>(() => {
     const previews = this.previews();
-    return Object.entries(this.room.worldState())
+    const world = this.room.worldState();
+    const shared = Object.entries(world)
       .filter(([id]) => id.startsWith(ITEM_PREFIX))
-      .map(([id, state]) => {
-        const item = toItem(id, state.data);
-        const preview = previews[id];
-        return preview ? { ...item, ...preview } : item;
-      });
+      .map(([id, state]) => toItem(id, state.data));
+    // A local item shadowed by the shared world (its own promotion) is dropped.
+    const locals = Object.values(this.locals()).filter((i) => !(i.id in world));
+    return [...shared, ...locals].map((item) => {
+      const preview = previews[item.id];
+      return preview ? { ...item, ...preview } : item;
+    });
   });
 
   /** Snapshot lookup; reactive when called inside a computed/effect. */
@@ -75,11 +80,23 @@ export class ItemStore {
     this.room.setWorldObject(item.id, toData(item));
   }
 
-  /** Commit a change to the shared state (clears any local preview). */
+  /**
+   * Add an item only this client sees — a util-window spawn still following
+   * the cursor (tableitems.md). Nothing reaches the network until `update()`
+   * commits it (the placing click), so an item picked from the window and then
+   * cancelled was never seen by the other players.
+   */
+  addLocal(item: ItemState): void {
+    this.locals.update((l) => ({ ...l, [item.id]: item }));
+  }
+
+  /** Commit a change to the shared state (clears any local preview; promotes
+   * a local-only item into the shared world). */
   update(id: string, patch: Partial<Omit<ItemState, 'id'>>): void {
     const item = this.item(id);
     if (!item) return;
     this.clearPreview(id);
+    this.locals.update(({ [id]: _, ...rest }) => rest);
     this.room.setWorldObject(id, toData({ ...item, ...patch }));
   }
 
@@ -92,8 +109,13 @@ export class ItemStore {
     this.previews.update(({ [id]: _, ...rest }) => rest);
   }
 
+  /** Delete the item; one that never left this client is simply discarded. */
   remove(id: string): void {
     this.clearPreview(id);
+    if (id in this.locals()) {
+      this.locals.update(({ [id]: _, ...rest }) => rest);
+      if (!(id in this.room.worldState())) return;
+    }
     this.room.removeWorldObject(id);
   }
 

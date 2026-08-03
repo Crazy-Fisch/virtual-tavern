@@ -543,6 +543,61 @@ describe('CardInteractions', () => {
         expect(loose.position[0]).toBeCloseTo(3, 3);
       });
 
+      describe('spawn drag (tableitems.md)', () => {
+        it('a util-window spawn follows the cursor locally and a click places and logs it', () => {
+          const item = newItem('d6', [0, 0.5, 0]);
+          interactions.beginSpawnDrag(item);
+          expect(interactions.draggingId()).toBe(item.id);
+          move(screenAt(2, 0, 1));
+          // Mid-spawn: visible on this client, but the shared world has never seen it.
+          expect(items.item(item.id)).toBeDefined();
+          expect(room.worldState()[item.id]).toBeUndefined();
+          down(screenAt(2, 0, 1));
+          up(screenAt(2, 0, 1));
+          const placed = items.item(item.id)!;
+          expect(room.worldState()[item.id]).toBeDefined();
+          expect(placed.position[0]).toBeCloseTo(2, 3);
+          expect(placed.position[2]).toBeCloseTo(1, 3);
+          expect(interactions.draggingId()).toBeNull();
+          expect(room.actions).toEqual(['added a d6']);
+        });
+
+        it('a spawn click that hits nothing placeable keeps the item on the cursor', () => {
+          const item = newItem('coin', [0, 0.5, 0]);
+          interactions.beginSpawnDrag(item);
+          const offTable = screenAt(15, 0, 15); // beyond the 20×20 surface
+          move(offTable);
+          down(offTable);
+          up(offTable);
+          expect(interactions.draggingId()).toBe(item.id); // still attached
+          expect(room.worldState()[item.id]).toBeUndefined();
+          expect(room.actions).toEqual([]);
+        });
+
+        it('Escape discards an unplaced spawn without a trace', () => {
+          const item = newItem('counter', [0, 0.5, 0]);
+          interactions.beginSpawnDrag(item);
+          move(screenAt(2, 0, 1));
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          expect(interactions.draggingId()).toBeNull();
+          expect(items.item(item.id)).toBeUndefined();
+          expect(room.worldState()[item.id]).toBeUndefined();
+          expect(room.actions).toEqual([]);
+        });
+
+        it('a spawned counter clicked onto a card attaches to it', () => {
+          const item = newItem('counter', [0, 0.5, 0]);
+          interactions.beginSpawnDrag(item);
+          const onCard = screenAt(0, 0.5, 0); // the Water Worm's object
+          move(onCard);
+          down(onCard);
+          up(onCard);
+          const placed = items.item(item.id)!;
+          expect(placed.attachedTo).toBe(cardId);
+          expect(room.actions).toEqual(['added a +1/+1 counter']);
+        });
+      });
+
       it('items are never picked up by a marquee — a selection is cards only', () => {
         const { id } = addItem('counter', [1, 0.21, 0]);
         marqueeBetween([-2, 0, -2], [2, 0, 2]);

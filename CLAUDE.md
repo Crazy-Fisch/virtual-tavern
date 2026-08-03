@@ -54,7 +54,15 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   the handler drops other rooms' deletes by `old.room_id`. Seating: `RoomInfo.ownerId` (from
   the create insert or the join RPC's `room_owner`) feeds `isRoomOwner`/`seatYaw` — the room
   creator sits at +Z, everyone else views from the mirrored −Z table end and spawns their
-  cards with `yaw = seatYaw()` so the cards read upright from their side.
+  cards with `yaw = seatYaw()` so the cards read upright from their side. Rooms are removed
+  when closed (`designdocs/perstistance.md`): every client tracks realtime **presence** on
+  the room channel (a per-tab key), and an explicit `leave()` that finds nobody else present
+  calls the `close_room` RPC — the FK cascades take all chat/history and world objects along.
+  While joined, a 5-minute `touch_room` heartbeat stamps `rooms.last_active`;
+  `cleanup_stale_rooms` (fired opportunistically on every join) deletes rooms untouched for a
+  day — the backstop for tabs closed without leaving (which keeps the reload-resume flow
+  alive, since a reload never closes the room). An unsynced presence state never triggers
+  deletion — the sweep handles those rooms instead.
 
 - **`src/app/p2p/p2p.service.ts`** (`P2pService`) — WebRTC avatar layer over Trystero (Nostr
   strategy: peers discover via public relays, data flows P2P). Carries ONLY the `pos` and
@@ -67,7 +75,8 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
 The database schema + RLS policies live in `supabase/schema.sql` (paste into the Supabase SQL
 editor once, fresh installs only). Existing installs run the dated
 `supabase/migration-*.sql` files newer than their install instead, in order (latest:
-`migration-2026-07-19-polish.sql` — decks table + `get_room_by_code` returning the owner).
+`migration-2026-08-03-room-cleanup.sql` — `rooms.last_active` + the `touch_room` /
+`close_room` / `cleanup_stale_rooms` RPCs).
 Chat identity is the Supabase auth uid (stable across sessions); avatars are keyed by
 Trystero peerId with names via the `name` action — the two id spaces never need mapping.
 
@@ -128,7 +137,9 @@ owns the popup state rendered by
 to-graveyard/to-exile/delete, and the item menu) plus the **util window**
 (`src/app/scene/util-window/`), opened by right-clicking empty table: the game items
 (dice/coin/counters, see below) above a debounced card search
-via `CardSearchService` (`card-search.service.ts`, Scryfall fetch, cached) with per-hit
+via `CardSearchService` (`card-search.service.ts` — fetches `{base}/cards/search` on the
+user-deposited card API, cached per API+query; without a deposit the util window shows a
+pointer to the Decks screen) with per-hit
 add-to-table/hand/deck. Hotkeys on the hovered card live in the `HOTKEYS` record.
 `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the hand DOM
 continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs the play)
@@ -150,7 +161,12 @@ Clicking empty table, or grabbing/right-clicking a card that is not selected, cl
 `Item` component renders one — a placeholder body from `item-geometry.ts` (pip-textured d6
 box, polyhedra for d4/d12/d20 with a value label sprite, a two-faced coin cylinder, a counter
 disc whose canvas texture prints "+2/+2") unless a GLB is registered in `ITEM_MODEL_URLS`
-(`scene-assets.ts`), in which case it clones that instead. Rolls and flips are plain state
+(`scene-assets.ts`), in which case it clones that instead. An item picked in the util window
+is not dropped at the click point: it spawns local-only (`ItemStore.addLocal`, mirroring
+`CardStore`) already attached to the cursor via `CardInteractions.beginSpawnDrag`, and a
+*click* on the table (not a release — the button isn't held) places it, which is when the
+shared world and the history first see it; Escape discards it unseen
+(`designdocs/tableitems.md`). Rolls and flips are plain state
 writes: `roll()`/`flip()` add whole turns to `rotation` (the d6 in quarter turns, so the pips
 on top _are_ the logged result; the coin in half turns, so odd counts land it on the other
 side) and every client lerps its own mesh over 1.5 s — no frame streaming and no physics.
@@ -201,12 +217,27 @@ each deck as a square backed by a cutout of its first card's art (right-click �
 and left-clicking a deck opens a full-page **deck view** — a scrollable grid of every card,
 images resolved via the card database (white placeholder while loading, pink for an unknown
 name); "← Back" returns to the overview.
-`CardDatabaseService` (root) is the local card database: `init()` (fired, not awaited, from an
-app initializer) loads a compact name→image index from the IndexedDB cache (`CardDbCache`) or,
-on first run, streams the Scryfall bulk-data download through `JsonArrayChunkParser`
-(~450 MB — never buffered whole; bounded memory) and caches the distilled index. `lookup(name)`
+**The card API is user-deposited** (`designdocs/legal.md`): the app ships **no** card-data
+endpoint of its own. `CardApiService` (root, `src/app/carddb/card-api.service.ts`) holds the
+base URL of the Scryfall-*compatible* API the user has provided — registered users keep it in
+their account info (auth `user_metadata['card_api_url']`, written via
+`SupabaseService.setCardApiUrl`), guests only temporarily in sessionStorage; a guest's deposit
+follows them into a fresh account like decks do. The Decks screen's header has the
+add/change-API button and modal (`apiDraft`/`saveApi`); until something is deposited,
+`configured()` is false, card search errors with a pointer to that screen, and the card
+database sits idle and empty.
+`CardDatabaseService` (root) is the local card database: an `effect` follows
+`CardApiService.apiUrl` (the service is created eagerly by an app initializer, never awaited)
+— once an API exists it loads a compact name→image index from the IndexedDB cache
+(`CardDbCache`) or, on first run against that API, resolves the download via the API's
+`/bulk-data` listing (`default_cards` entry — `download_uri` or `jsonl_download_uri`),
+gunzips `.gz` files in-stream (`DecompressionStream`, chosen by sniffing the magic bytes —
+headers can't distinguish a raw `.gz` file from a transparently `Content-Encoding`-inflated
+response), and streams it through `JsonChunkParser` (JSON array **or** JSON Lines; ~450 MB —
+never buffered whole; bounded memory), caching the distilled index. `lookup(name)`
 resolves decklist names (incl. double-faced front faces) to `{name, src}`. The cache key
-embeds `BULK_DATA_URL`, so pointing it at a newer export invalidates the cache.
+embeds the API base URL, so changing the deposit loads that API's own index (and the
+pre-deposit legacy cache entry is deleted on boot).
 
 ### 3D assets
 
@@ -225,7 +256,7 @@ normalised on load to the placeholder's size and centred on its bounding box
 (`Item.normalizeModel`), so authored scale/origin don't matter, and untextured full-metal
 default materials are made matte so they don't render black.
 
-`loadTexture` (card art, from Scryfall) tries an `<img>` first and falls back to fetching the
+`loadTexture` (card art, from the deposited card API) tries an `<img>` first and falls back to fetching the
 bytes in CORS mode and building the texture from an `ImageBitmap`. That fallback exists
 because the same art is also shown in the DOM: an `<img>` **without** `crossorigin` can leave
 an opaque response in the HTTP cache that then fails as a WebGL texture — cards with images
@@ -261,7 +292,7 @@ rotates). Follow this pattern for future instanced scene objects.
 - `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — only fully signed-out
   visitors are redirected to `/`): deck screen — import a pasted decklist, deck-square overview
   (left-click to open the full-page deck view, right-click to rename/delete), card database
-  status line.
+  status line, and the card-API deposit button + modal (legal.md).
 - `'tavern'` → `Tavern` (`src/app/tavern/`): hosts `Scene` + `Chat`. Guarded by `tavernGuard`
   (`tavern-guard.ts`, an async `CanActivateFn`): if no room is joined it first tries
   `RoomService.resume()` — the current room is persisted in localStorage on entry and cleared

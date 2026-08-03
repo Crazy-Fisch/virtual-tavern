@@ -16,10 +16,11 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     // Restore the persisted Supabase session before first render.
     provideAppInitializer(() => inject(SupabaseService).init()),
-    // Check/load the local card database — deliberately not awaited: first
-    // run downloads the Scryfall bulk file, which must never block boot.
+    // Create the card database early: it follows the user-deposited card API
+    // by effect (legal.md) and loads/downloads only once one exists —
+    // deliberately never awaited, a first-run download must not block boot.
     provideAppInitializer(() => {
-      void inject(CardDatabaseService).init();
+      inject(CardDatabaseService);
     }),
   ],
 };

@@ -13,11 +13,14 @@ $$;
 
 -- ---------- tables ----------
 create table public.rooms (
-  id         uuid primary key default gen_random_uuid(),
-  owner_id   uuid not null references auth.users (id) on delete cascade,
-  code       text not null unique default public.generate_room_code(),
-  name       text check (char_length(name) <= 40),
-  created_at timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null references auth.users (id) on delete cascade,
+  code        text not null unique default public.generate_room_code(),
+  name        text check (char_length(name) <= 40),
+  created_at  timestamptz not null default now(),
+  -- refreshed by clients while they are in the room (touch_room keep-alive);
+  -- cleanup_stale_rooms removes rooms nobody has kept alive for a day
+  last_active timestamptz not null default now()
 );
 
 create table public.chat_messages (
@@ -114,6 +117,36 @@ language sql security definer set search_path = public as $$
 $$;
 revoke execute on function public.get_room_by_code(text) from public, anon;
 grant execute on function public.get_room_by_code(text) to authenticated;
+
+-- ---------- room lifecycle (closed rooms are removed) ----------
+-- The last player leaving a room calls close_room; cleanup_stale_rooms is the
+-- backstop for players who closed the tab instead of leaving (clients fire it
+-- opportunistically on join — no server-side scheduler needed). Deleting a
+-- room takes all its chat/history messages and world objects with it via the
+-- on-delete-cascade FKs. Security definer because non-owners cannot touch the
+-- rooms table directly; knowing the room UUID is the capability, the same
+-- trust model world_objects uses (any member can already wipe the table).
+
+create or replace function public.touch_room(p_room_id uuid)
+returns void language sql security definer set search_path = public as $$
+  update rooms set last_active = now() where id = p_room_id;
+$$;
+revoke execute on function public.touch_room(uuid) from public, anon;
+grant execute on function public.touch_room(uuid) to authenticated;
+
+create or replace function public.close_room(p_room_id uuid)
+returns void language sql security definer set search_path = public as $$
+  delete from rooms where id = p_room_id;
+$$;
+revoke execute on function public.close_room(uuid) from public, anon;
+grant execute on function public.close_room(uuid) to authenticated;
+
+create or replace function public.cleanup_stale_rooms()
+returns void language sql security definer set search_path = public as $$
+  delete from rooms where last_active < now() - interval '24 hours';
+$$;
+revoke execute on function public.cleanup_stale_rooms() from public, anon;
+grant execute on function public.cleanup_stale_rooms() to authenticated;
 
 -- ---------- realtime ----------
 alter table public.world_objects replica identity full;
