@@ -5,6 +5,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:pages": "ng build --base-href /virtual-tavern/ && node -e \"require('fs').copyFileSync('dist/virtual-tavern/browser/index.html','dist/virtual-tavern/browser/404.html')\"",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
