@@ -5,6 +5,7 @@ database, and the "choose deck" gate when entering a room.
 
 ## Deck creation (`src/app/decks/`)
 
+
 - **Model** (`deck.types.ts`): a deck is exactly the doc's "basic json file" —
   `{ id, name, list }` with entries `{ card: "Water Worm", count: 1 }`.
   `deckSize()` sums the counts for the overview tiles.
