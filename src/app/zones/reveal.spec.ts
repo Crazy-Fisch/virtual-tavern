@@ -3,11 +3,13 @@ import {
   canUndo,
   currentState,
   isPending,
+  matchesQuery,
   place,
   placedIn,
   revealAction,
   revealZones,
   startReveal,
+  targetsFor,
   undo,
 } from './reveal';
 import { ZoneCard } from './zone.types';
@@ -109,11 +111,58 @@ describe('reveal (scry) session', () => {
   });
 
   it('names the card only for the graveyard — the rest of a reveal is private', () => {
-    expect(revealAction('hand', card('a'))).toBe('put a revealed card into their hand');
-    expect(revealAction('deck', card('a'))).toBe('put a revealed card back on top of their deck');
-    expect(revealAction('bottom', card('a'))).toBe(
+    expect(revealAction('hand', card('a'), 'reveal')).toBe(
+      'put a card from the top of their deck into their hand',
+    );
+    expect(revealAction('deck', card('a'), 'reveal')).toBe(
+      'put a revealed card back on top of their deck',
+    );
+    expect(revealAction('bottom', card('a'), 'reveal')).toBe(
       'put a revealed card on the bottom of their deck',
     );
-    expect(revealAction('graveyard', card('a'))).toBe('put A into their graveyard');
+    expect(revealAction('graveyard', card('a'), 'reveal')).toBe('put A into their graveyard');
+    // A search says where the card came from, still without naming it.
+    expect(revealAction('hand', card('a'), 'search')).toBe(
+      'put a card from their deck into their hand',
+    );
+  });
+});
+
+describe('reveal session in search mode', () => {
+  const HAND = [card('h')];
+  /** A search starts with the whole deck revealed and nothing below it. */
+  const start = (): RevealSession => startReveal(DECK, DECK.length, HAND, []);
+
+  it('offers only hand and graveyard', () => {
+    expect(targetsFor('search')).toEqual(['hand', 'graveyard']);
+    expect(targetsFor('reveal')).toEqual(['hand', 'deck', 'bottom', 'graveyard']);
+  });
+
+  it('leaves the deck in its original order as cards are taken out of it', () => {
+    let session = start();
+    expect(ids(revealZones(session).deck)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    session = place(session, 'c', 'hand');
+    session = place(session, 'a', 'graveyard');
+    const zones = revealZones(session);
+    // The untaken cards keep their relative order — a search must not reshuffle.
+    expect(ids(zones.deck)).toEqual(['b', 'd', 'e']);
+    expect(ids(zones.hand)).toEqual(['h', 'c']);
+    expect(ids(zones.graveyard)).toEqual(['a']);
+    expect(everywhere(session)).toEqual(['a', 'b', 'c', 'd', 'e', 'h']);
+  });
+
+  it('undo puts a tutored card back where it came from', () => {
+    let session = start();
+    session = place(session, 'c', 'hand');
+    session = undo(session);
+    expect(revealZones(session)).toEqual({ deck: DECK, hand: HAND, graveyard: [] });
+  });
+
+  it('filters by name, case-insensitively, and matches everything when blank', () => {
+    const bolt: ZoneCard = { id: 'x', name: 'Lightning Bolt', src: 'x.jpg' };
+    expect(matchesQuery(bolt, 'bolt')).toBe(true);
+    expect(matchesQuery(bolt, 'LIGHT')).toBe(true);
+    expect(matchesQuery(bolt, '  ')).toBe(true);
+    expect(matchesQuery(bolt, 'forest')).toBe(false);
   });
 });

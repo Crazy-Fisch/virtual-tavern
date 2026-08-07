@@ -20,6 +20,7 @@ import {
   Texture,
   Vector3,
 } from 'three';
+import { RoomService } from '../../room/room.service';
 import { AssetLoaderService } from '../asset-loader.service';
 import { CardInteractions } from '../card/card-interactions';
 import { CardStore } from '../card/card-store';
@@ -98,6 +99,7 @@ export class Item implements OnDestroy {
   private readonly graph = inject(SceneGraph);
   private readonly interactions = inject(CardInteractions);
   private readonly cards = inject(CardStore);
+  private readonly room = inject(RoomService);
 
   private wrapper?: Group;
   private pivot?: Group;
@@ -176,6 +178,13 @@ export class Item implements OnDestroy {
     const wrapper = new Group();
     const pivot = new Group();
     pivot.position.y = this.lift;
+    // A counter's printed value should read right way up from wherever the
+    // viewer is sitting (finaltouches.md "counter"). This turn is deliberately
+    // *local* — not in the shared ItemState — so each player reads it from
+    // their own end of the table. Both counter bodies are symmetric about their
+    // axis, so nothing but the text moves. Dice and coins are left alone: they
+    // have no text to face and a roll must look the same to everyone.
+    if (untracked(this.state).kind === 'counter') pivot.rotation.y = this.room.seatYaw();
     wrapper.add(pivot);
     this.wrapper = wrapper;
     this.pivot = pivot;

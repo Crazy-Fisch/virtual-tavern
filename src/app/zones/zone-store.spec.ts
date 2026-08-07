@@ -138,6 +138,23 @@ describe('ZoneStore', () => {
     expect(room.actions).toEqual([]);
   });
 
+  it('searchDeck hands over the whole deck untouched, and tells the table', () => {
+    const deck = [card('a', 'A'), card('b', 'B')];
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: deck });
+    room.batches.length = 0;
+
+    expect(store.searchDeck()).toEqual(deck);
+    expect(store.mine().deck).toEqual(deck); // a peek, like revealTop
+    expect(room.batches).toEqual([]);
+    // Searching a deck is public even though what's in it isn't.
+    expect(room.actions).toEqual(['searched their deck']);
+
+    room.actions.length = 0;
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [] });
+    expect(store.searchDeck()).toEqual([]);
+    expect(room.actions).toEqual([]);
+  });
+
   it('applyReveal writes deck, hand and graveyard in ONE batch', () => {
     store.loadDeck([card('a', 'A')]);
     room.batches.length = 0;

@@ -12,6 +12,16 @@
   max-width: min(84vw, 720px);
 }
 
+// Narrow a searched deck down by name.
+.filter {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #3a3a4c;
+  border-radius: 0.4rem;
+  background: #16161f;
+  color: #eee;
+  font: inherit;
+}
+
 // Five across before it wraps: top-left first, bottom-right last.
 .grid {
   display: grid;
@@ -22,6 +32,12 @@
 
   @media (max-width: 640px) {
     grid-template-columns: repeat(3, 6.4rem);
+  }
+
+  .none {
+    grid-column: 1 / -1;
+    margin: 0.5rem 0;
+    color: #999;
   }
 }
 
@@ -83,6 +99,11 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.5rem;
+
+  // A search only offers hand and graveyard.
+  &.two {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .target {

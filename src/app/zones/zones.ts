@@ -9,7 +9,7 @@ import { CardStore } from '../scene/card/card-store';
 import { newCardId } from '../scene/card/card.types';
 import { Dialog } from '../shared/dialog/dialog';
 import { RevealPanel } from './reveal-panel/reveal-panel';
-import { REVEAL_COUNTS } from './reveal';
+import { REVEAL_COUNTS, RevealMode } from './reveal';
 import { ZoneStore } from './zone-store';
 import { OpenZoneKind, PlayerZones, ZONE_KINDS, ZoneCard, ZoneKind } from './zone.types';
 
@@ -107,8 +107,8 @@ export class Zones implements OnDestroy {
   protected readonly revealOpen = signal(false);
   /** The "X" count being typed into the reveal row. */
   protected readonly revealDraft = signal('');
-  /** Cards currently shown in the scry window, or null when it is closed. */
-  protected readonly revealing = signal<ZoneCard[] | null>(null);
+  /** What the deck-viewing panel is showing, or null when it is closed. */
+  protected readonly revealing = signal<{ cards: ZoneCard[]; mode: RevealMode } | null>(null);
   /** Viewport size, tracked so the hand geometry re-fits on resize. */
   private readonly viewport = signal({ w: window.innerWidth, h: window.innerHeight });
 
@@ -154,7 +154,18 @@ export class Zones implements OnDestroy {
 
   ngOnDestroy(): void {
     this.clearPendingDrag();
+    this.interactions.hoveredHandCard.set(null);
     for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
+  }
+
+  /**
+   * Tell CardInteractions which hand card the cursor is over, so its keyboard
+   * layer can act on it — `v` views a hand card exactly like a table card
+   * (finaltouches.md "hand view"). Scene hover picking is a raycast and cannot
+   * see these DOM cards, hence the hand-off.
+   */
+  protected hoverHandCard(card: ZoneCard | null): void {
+    this.interactions.hoveredHandCard.set(card ? { name: card.name, src: card.src } : null);
   }
 
   protected onResize(): void {
@@ -428,11 +439,26 @@ export class Zones implements OnDestroy {
    * reveals what it has, and an empty deck opens nothing.
    */
   protected reveal(count: number): void {
+    this.closeDeckMenu();
+    const cards = this.zones.revealTop(count);
+    if (cards.length > 0) this.revealing.set({ cards, mode: 'reveal' });
+  }
+
+  /**
+   * Look through the whole deck for a card (finaltouches.md "searching deck"):
+   * the same panel, showing everything left, filtered by name, with hand and
+   * graveyard as the destinations.
+   */
+  protected search(): void {
+    this.closeDeckMenu();
+    const cards = this.zones.searchDeck();
+    if (cards.length > 0) this.revealing.set({ cards, mode: 'search' });
+  }
+
+  private closeDeckMenu(): void {
     this.menu.set(null);
     this.revealOpen.set(false);
     this.revealDraft.set('');
-    const cards = this.zones.revealTop(count);
-    if (cards.length > 0) this.revealing.set(cards);
   }
 
   /** Reveal the number typed into the menu's "X" box (positive integers only). */

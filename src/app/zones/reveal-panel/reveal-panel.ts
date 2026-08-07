@@ -13,16 +13,19 @@ import { ZoneStore } from '../zone-store';
 import {
   REVEAL_TARGETS,
   REVEAL_TARGET_LABELS,
+  RevealMode,
   RevealSession,
   RevealTarget,
   canUndo,
   currentState,
   isPending,
+  matchesQuery,
   place,
   placedIn,
   revealAction,
   revealZones,
   startReveal,
+  targetsFor,
   undo,
 } from '../reveal';
 import { ZoneCard } from '../zone.types';
@@ -38,17 +41,23 @@ interface RevealDrag {
 const DRAG_THRESHOLD_PX = 4;
 
 /**
- * The scry window (newmechanics.md "scrying & other actions"): the top cards of
- * my deck laid out first (top-left) to last (bottom-right), each draggable onto
- * one of four zones — hand, deck (top), bottom, graveyard — with an undo that
- * walks back to the moment the reveal started.
+ * The window for looking at your own deck, in two flavours over one session
+ * model (`../reveal.ts`):
+ *
+ * - **reveal** (newmechanics.md "scrying") — the top cards laid out first
+ *   (top-left) to last (bottom-right), each draggable onto hand, deck (top),
+ *   bottom or graveyard.
+ * - **search** (finaltouches.md "searching deck" — a tutor) — every card left
+ *   in the deck, narrowed with a filter box, draggable to hand or graveyard.
+ *   Its footer also offers "Shuffle & close", since looking through a deck
+ *   normally ends with shuffling it.
  *
  * The cards are shown to **me only**; the history records that a look happened
- * and, for the open graveyard, what landed there — never what was on top of the
- * deck. Every placement is committed straight away through `ZoneStore`
- * (one batched write of deck + hand + graveyard), so nothing depends on this
- * dialog surviving: cards not yet placed are still in the deck where they were,
- * and closing the panel simply stops.
+ * and, for the open graveyard, what landed there — never what was in the deck.
+ * Every placement is committed straight away through `ZoneStore` (one batched
+ * write of deck + hand + graveyard), so nothing depends on this dialog
+ * surviving: cards not yet placed are still in the deck where they were, and
+ * closing the panel simply stops.
  */
 @Component({
   selector: 'app-reveal-panel',
@@ -60,18 +69,24 @@ const DRAG_THRESHOLD_PX = 4;
 export class RevealPanel {
   /** The revealed cards, peeked (and logged) by the caller. */
   readonly cards = input.required<ZoneCard[]>();
+  /** Scrying the top of the deck, or searching the whole of it. */
+  readonly mode = input<RevealMode>('reveal');
   readonly close = output<void>();
 
   private readonly zones = inject(ZoneStore);
 
-  protected readonly targets = REVEAL_TARGETS;
   protected readonly targetLabels = REVEAL_TARGET_LABELS;
+  /** Zones this panel offers — all four when scrying, hand/graveyard when searching. */
+  protected readonly targets = computed(() => targetsFor(this.mode()));
+  protected readonly searching = computed(() => this.mode() === 'search');
 
   private readonly session = signal<RevealSession | null>(null);
   /** The card under the cursor mid-drag, or null. */
   protected readonly dragging = signal<RevealDrag | null>(null);
   /** Drop zone the cursor is currently over, highlighted while dragging. */
   protected readonly hovered = signal<RevealTarget | null>(null);
+  /** Search-mode filter text. */
+  protected readonly query = signal('');
 
   /** Press that has not yet travelled far enough to be a drag. */
   private pending: RevealDrag | null = null;
@@ -81,11 +96,20 @@ export class RevealPanel {
     return session ? canUndo(session) : false;
   });
 
-  /** Grid slots: every revealed card, with the ones already placed marked. */
+  /**
+   * Grid slots. Scrying keeps a placed card's slot as an empty gap, so the
+   * first/last badges keep pointing at the corners they describe; a search has
+   * no such ordering to preserve, so a taken card simply leaves — and the
+   * filter box narrows what is shown.
+   */
   protected readonly slots = computed(() => {
     const session = this.session();
     if (!session) return [];
-    return session.cards.map((card) => ({ card, placed: !isPending(session, card.id) }));
+    const search = this.searching();
+    const query = this.query();
+    return session.cards
+      .map((card) => ({ card, placed: !isPending(session, card.id) }))
+      .filter((slot) => !search || (!slot.placed && matchesQuery(slot.card, query)));
   });
 
   /** How many revealed cards are still waiting for a decision. */
@@ -159,7 +183,11 @@ export class RevealPanel {
     const el = document.elementFromPoint(x, y);
     const box = el instanceof Element ? el.closest('[data-target]') : null;
     const target = box?.getAttribute('data-target');
-    return REVEAL_TARGETS.find((t) => t === target) ?? null;
+    return this.targets().find((t) => t === target) ?? null;
+  }
+
+  protected onQuery(event: Event): void {
+    this.query.set((event.target as HTMLInputElement).value);
   }
 
   /** Route a card and commit the step (deck + hand + graveyard in one write). */
@@ -169,7 +197,7 @@ export class RevealPanel {
     const next = place(session, card.id, target);
     if (next === session) return; // already placed (a stale drop)
     this.session.set(next);
-    this.zones.applyReveal(revealZones(next), revealAction(target, card));
+    this.zones.applyReveal(revealZones(next), revealAction(target, card, this.mode()));
   }
 
   protected undoLast(): void {
@@ -178,6 +206,12 @@ export class RevealPanel {
     const next = undo(session);
     this.session.set(next);
     this.zones.applyReveal(revealZones(next), 'took back their last reveal move');
+  }
+
+  /** Searching a deck normally ends with shuffling it; one click does both. */
+  protected shuffleAndClose(): void {
+    this.zones.shuffle();
+    this.done();
   }
 
   protected done(): void {

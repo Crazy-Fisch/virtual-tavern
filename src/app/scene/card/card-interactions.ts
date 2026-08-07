@@ -166,6 +166,17 @@ export class CardInteractions {
   /** Right-click menu of a die or coin (roll / flip / delete). */
   readonly itemMenu = signal<OverlayAnchor | null>(null);
   readonly viewCardId = signal<string | null>(null);
+  /**
+   * A card being viewed large that has no table instance to point at — a
+   * related-panel entry, or a card in my hand (finaltouches.md "hand view").
+   */
+  readonly viewImage = signal<SpawnCard | null>(null);
+  /**
+   * The card the cursor is over in the hand UI, published by the Zones overlay.
+   * Hover picking is raycast against the scene, which cannot see DOM cards, so
+   * the hand tells us instead — that is what lets the `v` hotkey work there.
+   */
+  readonly hoveredHandCard = signal<SpawnCard | null>(null);
   readonly relatedPanel = signal<RelatedAnchor | null>(null);
   readonly utilWindow = signal<UtilAnchor | null>(null);
   /** How many cards the context menu's group actions would hit (1 = just this card). */
@@ -637,12 +648,22 @@ export class CardInteractions {
       this.itemMenu.set(null);
       this.relatedPanel.set(null);
       this.utilWindow.set(null);
+      this.viewImage.set(null);
       return;
     }
     // Untap-all is global — it needs no hovered card (moreimprovements.md).
     if (event.key === 'u') {
       event.preventDefault();
       this.untapAll();
+      return;
+    }
+    // A card in the hand answers to `v` just like one on the table
+    // (finaltouches.md). It wins while the cursor is over it, since the
+    // raycast hover it would otherwise fall through to is stale by then.
+    const handCard = this.hoveredHandCard();
+    if (handCard && event.key === 'v') {
+      event.preventDefault();
+      this.viewImage.set(handCard);
       return;
     }
     const action = HOTKEYS[event.key];

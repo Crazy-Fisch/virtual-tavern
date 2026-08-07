@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CardDatabaseService } from '../../../carddb/card-database.service';
 import { Dialog } from '../../../shared/dialog/dialog';
 import { ItemStore } from '../../item/item-store';
@@ -30,9 +30,6 @@ export class CardOverlay {
   private readonly store = inject(CardStore);
   private readonly items = inject(ItemStore);
   private readonly db = inject(CardDatabaseService);
-
-  /** A related card being viewed large (it has no table card to point at). */
-  protected readonly relatedView = signal<SpawnCard | null>(null);
 
   /** The die or coin whose right-click menu is open, if any. */
   protected readonly itemMenu = computed(() => {
@@ -104,8 +101,10 @@ export class CardOverlay {
     this.interactions.armSpawnCardDrag(event, card, () => this.closeRelated());
   }
 
+  /** A card with no table instance — a related entry, or one in my hand — is
+   * viewed through the shared `viewImage` popup (finaltouches.md). */
   protected viewRelated(card: RelatedEntry): void {
-    this.relatedView.set({ name: card.name, src: card.src });
+    this.interactions.viewImage.set({ name: card.name, src: card.src });
   }
 
   protected closeView(): void {

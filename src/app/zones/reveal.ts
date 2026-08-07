@@ -16,6 +16,27 @@ export type RevealTarget = 'hand' | 'deck' | 'bottom' | 'graveyard';
 
 export const REVEAL_TARGETS: readonly RevealTarget[] = ['hand', 'deck', 'bottom', 'graveyard'];
 
+/**
+ * The two things a panel can be: looking at the **top** of the deck (scry), or
+ * looking **through** it for a card (a tutor — finaltouches.md "searching
+ * deck"). Both are the same session over the same zones; a search just starts
+ * with the whole deck revealed, offers fewer destinations, and filters by name.
+ */
+export type RevealMode = 'reveal' | 'search';
+
+/** A search only offers the two zones the design doc names. */
+export const SEARCH_TARGETS: readonly RevealTarget[] = ['hand', 'graveyard'];
+
+export function targetsFor(mode: RevealMode): readonly RevealTarget[] {
+  return mode === 'search' ? SEARCH_TARGETS : REVEAL_TARGETS;
+}
+
+/** Cards whose name contains the query (case-insensitive); blank shows all. */
+export function matchesQuery(card: ZoneCard, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return q.length === 0 || card.name.toLowerCase().includes(q);
+}
+
 /** Button label for each drop zone under the revealed cards. */
 export const REVEAL_TARGET_LABELS: Readonly<Record<RevealTarget, string>> = {
   hand: 'Hand',
@@ -143,11 +164,17 @@ export function revealZones(session: RevealSession): {
   };
 }
 
-/** History line for a placement — closed zones stay nameless (the reveal is private). */
-export function revealAction(target: RevealTarget, card: ZoneCard): string {
+/**
+ * History line for a placement. Closed zones stay nameless — a look through
+ * your own deck is private, and naming what went into your hand would give the
+ * search away; the graveyard is an open zone anyone can examine, so that one
+ * names the card.
+ */
+export function revealAction(target: RevealTarget, card: ZoneCard, mode: RevealMode): string {
+  const from = mode === 'search' ? 'their deck' : 'the top of their deck';
   switch (target) {
     case 'hand':
-      return 'put a revealed card into their hand';
+      return `put a card from ${from} into their hand`;
     case 'deck':
       return 'put a revealed card back on top of their deck';
     case 'bottom':

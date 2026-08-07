@@ -127,6 +127,26 @@ describe('CardInteractions', () => {
     expect(store.card(cardId)!.faceUp).toBe(false);
   });
 
+  it('v views the hovered hand card, taking priority over the table below', () => {
+    const inHand = { name: 'Llanowar Elves', src: 'https://example.com/elves.jpg' };
+    // A stale scene hover from before the cursor moved onto the hand UI.
+    interactions.hoveredId.set(cardId);
+    interactions.hoveredHandCard.set(inHand);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
+    expect(interactions.viewImage()).toEqual(inHand);
+    expect(interactions.viewCardId()).toBeNull(); // not the table card
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(interactions.viewImage()).toBeNull();
+  });
+
+  it('other hotkeys still reach the table while a hand card is hovered', () => {
+    interactions.hoveredId.set(cardId);
+    interactions.hoveredHandCard.set({ name: 'Llanowar Elves', src: 'x.jpg' });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    expect(store.card(cardId)!.faceUp).toBe(false);
+  });
+
   it('hotkeys are ignored while typing in an input', () => {
     const input = document.createElement('input');
     document.body.appendChild(input);

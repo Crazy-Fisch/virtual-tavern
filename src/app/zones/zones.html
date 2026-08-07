@@ -74,9 +74,11 @@
           class="hand-card"
           [class.revealed]="c.revealed"
           [style.transform]="handCardTransform(i, me.hand.length)"
-          [title]="'Drag onto the table to play ' + c.name + ' — right-click to reveal'"
+          [title]="'Drag onto the table to play ' + c.name + ' — V to view, right-click to reveal'"
           (pointerdown)="startDrag($event, c)"
           (contextmenu)="openHandMenu($event, c)"
+          (pointerenter)="hoverHandCard(c)"
+          (pointerleave)="hoverHandCard(null)"
         >
           <img [src]="c.src" [alt]="c.name" crossorigin="anonymous" draggable="false" />
         </button>
@@ -183,15 +185,18 @@
           <button type="button" (click)="revealDrafted()">Reveal</button>
         </div>
       }
+      <!-- Look through the whole deck for a card (finaltouches.md). -->
+      <button type="button" (click)="search()">Search…</button>
     } @else {
       <button type="button" (click)="examine(zones.mine().uid, m.kind)">Examine</button>
     }
   </div>
 }
 
-<!-- The scry window: the revealed cards, dragged onto hand/deck/bottom/grave. -->
-@if (revealing(); as revealed) {
-  <app-reveal-panel [cards]="revealed" (close)="revealing.set(null)" />
+<!-- Looking at my own deck: scrying the top cards, or searching the whole of
+     it — the same panel, dragging cards out onto the zones it offers. -->
+@if (revealing(); as open) {
+  <app-reveal-panel [cards]="open.cards" [mode]="open.mode" (close)="revealing.set(null)" />
 }
 
 @if (handMenu(); as hm) {

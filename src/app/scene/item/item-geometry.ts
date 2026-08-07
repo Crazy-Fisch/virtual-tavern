@@ -222,13 +222,32 @@ const COUNTER_COLORS: Readonly<Record<CounterVariant, string>> = {
   x: '#3c3f5c',
 };
 
-/** A counter's face, showing its current value ("+2/+2", or "2x"). */
+/**
+ * A counter's face, showing its current value ("+2/+2", or "2x").
+ *
+ * The two shapes carry their face on differently-mapped surfaces, so the text
+ * has to be drawn differently to come out the same way up (newmechanics.md
+ * asked for the x counter, finaltouches.md for the other two to match it).
+ * With the default `flipY`, the top row of this canvas is v = 1, and Three maps
+ * that to:
+ *
+ * - **box +Y** (the x counter): u = 1 → +X, v = 1 → −Z
+ * - **cylinder top cap** (the ±1/±1 discs): u = 1 → +Z, v = 1 → +X
+ *
+ * i.e. the disc's face is the box's turned a quarter turn. Drawing the disc's
+ * text rotated back by that quarter turn lands both in the same place.
+ */
 export function makeCounterTexture(value: number, variant: CounterVariant): CanvasTexture {
   const made = canvas2d(128);
   if (!made) return new CanvasTexture(document.createElement('canvas'));
   const { canvas, ctx } = made;
   ctx.fillStyle = COUNTER_COLORS[variant];
   ctx.fillRect(0, 0, 128, 128);
+  if (variant !== 'x') {
+    ctx.translate(64, 64);
+    ctx.rotate(-Math.PI / 2);
+    ctx.translate(-64, -64);
+  }
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

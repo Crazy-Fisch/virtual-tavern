@@ -90,8 +90,10 @@
   </app-dialog>
 }
 
-@if (relatedView(); as card) {
-  <app-dialog [heading]="card.name" [fit]="true" (close)="relatedView.set(null)">
+<!-- A card with no instance on the table: a related-panel entry, or one of my
+     hand cards viewed with `v`. -->
+@if (interactions.viewImage(); as card) {
+  <app-dialog [heading]="card.name" [fit]="true" (close)="interactions.viewImage.set(null)">
     <img class="view-img" [src]="card.src" [alt]="card.name" crossorigin="anonymous" />
   </app-dialog>
 }

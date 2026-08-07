@@ -156,7 +156,10 @@ each entry is draggable onto the table (click = view large). Hotkeys on the hove
 live in the `HOTKEYS` record; **U** is global — `untapAll()` untaps every tapped card whose
 `CardState.ownerUid` (stamped on every card put onto the table) is mine, in one batched
 write, and the Zones overlay offers the same as an "Untap all" button next to the life
-counter. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
+counter. **V** also works over a card in the **hand** (`designdocs/finaltouches.md`): hover
+picking is a raycast and can't see DOM cards, so Zones publishes the one under the cursor into
+`hoveredHandCard`, and the key opens `viewImage` — the shared "view a card with no table
+instance" popup that the related panel uses too. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
 hand DOM continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs
 the play) and `revert` (off-table miss or Escape, back into the hand) decide the ending. The
 pointer listeners live on `window` (not the canvas) so a hand drag started over DOM keeps
@@ -196,7 +199,12 @@ hovered), and attach to a card when dropped on one: `attachedTo` + a position th
 offset from that card's origin, so the counter follows it and leaves the table with it. Their
 `variant` is `plus` / `minus` / **`x`** — the last a plain multiplier ("2x") on a squared body
 rather than a disc, which is why `counterFaceSlot()` exists (the printed face is material 1 on
-the cylinder, 2 on the box).
+the cylinder, 2 on the box). The two bodies also carry that face on differently-mapped
+surfaces — Three maps the box's +Y as `u→+X, v→−Z` but the cylinder's cap as `u→+Z, v→+X`, a
+quarter turn apart — so `makeCounterTexture` draws the disc's text rotated back to match
+(derivation is in its doc comment). On top of that, `Item` gives a counter's pivot a **local**
+`seatYaw()` turn so its value reads right way up from whichever end the viewer sits at; it is
+deliberately not in the shared `ItemState`, and dice/coins are left alone.
 
 Player zones (hand/deck/graveyard/exile) live in `src/app/zones/`: `ZoneStore` (root service)
 projects `zone:<uid>:<kind>` world objects (`{ ownerName, cards }`; whole-zone LWW writes) and
@@ -209,8 +217,8 @@ table to play it — `startDrag` arms a press on pointerdown; past a small thres
 off to `CardInteractions.beginDragFromHand`, spawning the card face-up at `seatYaw()` and
 following the cursor; releasing over the table commits, releasing off-table returns it to the
 hand; a hand too wide to fit is pannable by wheeling over it — `onHandWheel` shifts `handScroll`).
-My deck pile draws on **left-click** and opens a right-click menu (shuffle, and **Reveal** —
-the top 1–5 cards, or an X typed in); the graveyard
+My deck pile draws on **left-click** and opens a right-click menu (shuffle, **Reveal** —
+the top 1–5 cards, or an X typed in — and **Search**); the graveyard
 and exile piles open on click. A card dragged onto a zone widget is absorbed by that zone:
 Zones registers a
 `CardDropTarget` per kind (hit-tested with `elementFromPoint`) that calls `takeFromTable`.
@@ -223,10 +231,15 @@ created with the shuffled deck), and starts prefetching the card images, so mere
 decks never costs a download. `refreshOwnerName()` only renames zones that already exist
 (rejoin).
 
-**Reveal / scry** (`designdocs/newmechanics.md`) is `src/app/zones/reveal.ts` (pure) plus the
-`RevealPanel` component (`reveal-panel/`). `ZoneStore.revealTop(n)` only _peeks_ — it moves
-nothing and logs that a look happened, never what was seen — and the panel then routes each
-card by drag onto hand / deck (top) / bottom / graveyard, committing every step through
+**Looking at my own deck** is `src/app/zones/reveal.ts` (pure) plus the `RevealPanel` component
+(`reveal-panel/`), in two `RevealMode`s over one session model: **reveal** — scry the top n
+(`designdocs/newmechanics.md`), routing cards to hand / deck (top) / bottom / graveyard — and
+**search** — a tutor through the whole deck (`designdocs/finaltouches.md`), which just starts
+with every card revealed, offers only hand/graveyard (`targetsFor`), filters by name
+(`matchesQuery`), and adds a "Shuffle & close" button.
+`ZoneStore.revealTop(n)` / `searchDeck()` only _peek_ — they move
+nothing and log that a look happened, never what was seen — and the panel then routes each
+card by drag, committing every step through
 `applyReveal()` (deck + hand + graveyard in **one** batch). The load-bearing invariant is that
 **no card is ever in limbo**: a revealed card the player has not placed is still sitting in the
 deck, so `revealZones()` derives the deck as `top ++ pending ++ rest ++ bottom` and abandoning

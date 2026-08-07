@@ -1,8 +1,26 @@
-<app-dialog [heading]="'Top ' + cards().length + ' of your deck'" [fit]="true" (close)="done()">
+<app-dialog
+  [heading]="searching() ? 'Search your deck' : 'Top ' + cards().length + ' of your deck'"
+  [fit]="true"
+  (close)="done()"
+>
   <div class="reveal">
-    <!-- The revealed cards in deck order: top-left is the first card off the
-         deck, bottom-right the last. A placed card leaves an empty slot behind
-         so the first/last badges keep pointing at the same corners. -->
+    @if (searching()) {
+      <!-- Narrow a full deck down to the card being tutored for. -->
+      <input
+        class="filter"
+        type="search"
+        placeholder="Filter by card name…"
+        autocomplete="off"
+        autofocus
+        [value]="query()"
+        (input)="onQuery($event)"
+      />
+    }
+
+    <!-- Scrying lays the cards out in deck order: top-left is the first card
+         off the deck, bottom-right the last, and a placed card leaves an empty
+         slot behind so the badges keep pointing at the same corners. A search
+         has no such order to keep, so a taken card just goes. -->
     <div class="grid">
       @for (slot of slots(); track slot.card.id; let i = $index; let last = $last) {
         <figure class="slot" [class.placed]="slot.placed">
@@ -18,20 +36,22 @@
               (pointerdown)="startDrag($event, slot.card, slot.placed)"
             />
           }
-          @if (i === 0) {
+          @if (!searching() && i === 0) {
             <span class="marker first">first</span>
           }
-          @if (last && slots().length > 1) {
+          @if (!searching() && last && slots().length > 1) {
             <span class="marker last">last</span>
           }
         </figure>
+      } @empty {
+        <p class="none">{{ searching() ? 'No cards match.' : 'Nothing left to place.' }}</p>
       }
     </div>
 
     <!-- Drop zones. Hit-tested by data-target, so the floating ghost (which is
          pointer-events: none) never gets in the way. -->
-    <div class="targets">
-      @for (target of targets; track target) {
+    <div class="targets" [class.two]="searching()">
+      @for (target of targets(); track target) {
         <div
           class="target"
           [attr.data-target]="target"
@@ -52,7 +72,10 @@
 
     <footer class="foot">
       <button type="button" class="undo" [disabled]="!canUndo()" (click)="undoLast()">Undo</button>
-      <span class="left">{{ left() }} left</span>
+      <span class="left">{{ left() }} {{ searching() ? 'in deck' : 'left' }}</span>
+      @if (searching()) {
+        <button type="button" (click)="shuffleAndClose()">Shuffle &amp; close</button>
+      }
       <button type="button" class="done" (click)="done()">Done</button>
     </footer>
   </div>

@@ -171,6 +171,19 @@ export class ZoneStore {
   }
 
   /**
+   * Look through my whole deck (finaltouches.md "searching deck" — a tutor).
+   * Like `revealTop` this only peeks; the search panel writes back through
+   * `applyReveal` as cards are taken out. Everyone is told a search happened,
+   * since in a real game that is public even though the cards are not.
+   */
+  searchDeck(): ZoneCard[] {
+    const deck = this.mine().deck;
+    if (deck.length === 0) return [];
+    this.room.sendAction('searched their deck');
+    return deck;
+  }
+
+  /**
    * Commit one step of a reveal: the three zones it can touch, written in ONE
    * batch so a card can never be in two zones (or none) even if the request is
    * lost. Undo goes through here too — it is just an earlier set of zones.
