@@ -26,6 +26,17 @@ table. There's a spec for exactly that. Other hotkeys are untouched and still re
 table — only V is claimed, since the rest (tap, flip, to-graveyard…) mean nothing for a
 card that isn't in play.
 
+> **Corrected later (stale-hover fix, see `CLAUDE.md`).** Both hovers here were push-only and
+> nothing invalidated them: `pointerleave` never fires when a hand card is _removed_ from under
+> the cursor (playing it), and `hoveredId` was only ever set from canvas moves, so it survived the
+> cursor moving onto any DOM overlay. V would then keep opening the card you last touched in your
+> hand — outranking the table, by the precedence above — and X/Delete could hit a card you were no
+> longer pointing at. `hoveredHandCard` now carries its ZoneCard id and is read through
+> `handHover()`, which drops a card that has left the hand; a pointer move over the canvas clears
+> the hand hover, and a move off the canvas clears the table hover. So "other hotkeys still reach
+> the table while a hand card is hovered" now means: they reach whatever the cursor last proved
+> was under it — which, with the cursor on the hand, is nothing.
+
 The dialog itself was already there, just private: `CardOverlay` had a local
 `relatedView` for "a card being viewed large that has no table instance". That moved up
 to **`CardInteractions.viewImage`**, so the related panel and the hand now share one

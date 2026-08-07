@@ -203,11 +203,20 @@ describe('CardInteractions', () => {
     expect(store.card(cardId)!.faceUp).toBe(false);
   });
 
+  /** Put a card in my hand and publish it as the one under the cursor, the way
+   * the Zones overlay does on pointerenter. */
+  function hoverHandCard(name = 'Llanowar Elves'): { id: string; name: string; src: string } {
+    const inHand = { id: crypto.randomUUID(), name, src: 'https://example.com/elves.jpg' };
+    zones.addCard('hand', inHand);
+    room.actions.length = 0;
+    interactions.hoveredHandCard.set(inHand);
+    return inHand;
+  }
+
   it('v views the hovered hand card, taking priority over the table below', () => {
-    const inHand = { name: 'Llanowar Elves', src: 'https://example.com/elves.jpg' };
     // A stale scene hover from before the cursor moved onto the hand UI.
     interactions.hoveredId.set(cardId);
-    interactions.hoveredHandCard.set(inHand);
+    const inHand = hoverHandCard();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
     expect(interactions.viewImage()).toEqual(inHand);
     expect(interactions.viewCardId()).toBeNull(); // not the table card
@@ -218,9 +227,39 @@ describe('CardInteractions', () => {
 
   it('other hotkeys still reach the table while a hand card is hovered', () => {
     interactions.hoveredId.set(cardId);
-    interactions.hoveredHandCard.set({ name: 'Llanowar Elves', src: 'x.jpg' });
+    hoverHandCard();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
     expect(store.card(cardId)!.faceUp).toBe(false);
+  });
+
+  it('a hand hover that outlived its card is ignored — v opens nothing', () => {
+    const inHand = hoverHandCard();
+    // Playing the card destroys its DOM button under the cursor, so the
+    // pointerleave that would have cleared the hover never fires.
+    zones.playFromHand(inHand.id);
+    expect(interactions.handHover()).toBeNull();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
+    expect(interactions.viewImage()).toBeNull();
+    expect(interactions.viewCardId()).toBeNull();
+  });
+
+  it('moving back over the table drops a hand hover whose pointerleave never fired', () => {
+    hoverHandCard();
+    canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 5, clientY: 5 }));
+    expect(interactions.hoveredHandCard()).toBeNull();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
+    expect(interactions.viewImage()).toBeNull();
+  });
+
+  it('moving onto a DOM overlay clears the table hover, so hotkeys hit nothing', () => {
+    const overlay = document.createElement('div'); // chat, a pile, the hand…
+    document.body.appendChild(overlay);
+    interactions.hoveredId.set(cardId);
+    overlay.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 5, clientY: 5 }));
+    expect(interactions.hoveredId()).toBeNull();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+    expect(store.card(cardId)).toBeDefined(); // not deleted from across the screen
+    overlay.remove();
   });
 
   it('hotkeys are ignored while typing in an input', () => {

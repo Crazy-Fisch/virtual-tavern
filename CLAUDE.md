@@ -193,7 +193,15 @@ write, and the Zones overlay offers the same as an "Untap all" button next to th
 counter, alongside a **Hotkeys** button. **V** also works over a card in the **hand** (`designdocs/finaltouches.md`): hover
 picking is a raycast and can't see DOM cards, so Zones publishes the one under the cursor into
 `hoveredHandCard`, and the key opens `viewImage` — the shared "view a card with no table
-instance" popup that the related panel uses too. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
+instance" popup that the related panel uses too. **Both hovers are only trusted while the cursor
+is demonstrably still on them**, because neither is cleared reliably by events: a pointer move
+over the canvas re-picks `hoveredId` _and_ drops the hand hover, a move anywhere else clears
+`hoveredId` (a DOM overlay is not the table), and the hand hover carries its ZoneCard id so
+`handHover()` — the computed the keydown handler reads, never the raw signal — can ignore a card
+that has left the hand. Playing a card destroys its hand button under the cursor, so no
+`pointerleave` ever fires; without those rules **V** kept opening the card you last touched,
+outranking whatever you were actually pointing at, and X/Delete could hit a card you had long
+since moved away from. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
 hand DOM continue in this same drag flow — the `HandDragHooks` `commit` (table drop, logs
 the play) and `revert` (off-table miss or Escape, back into the hand) decide the ending. The
 pointer listeners live on `window` (not the canvas) so a hand drag started over DOM keeps

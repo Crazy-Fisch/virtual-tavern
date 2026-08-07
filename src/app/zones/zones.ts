@@ -157,7 +157,7 @@ export class Zones implements OnDestroy {
 
   ngOnDestroy(): void {
     this.clearPendingDrag();
-    this.interactions.hoveredHandCard.set(null);
+    this.clearHandHover();
     for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
   }
 
@@ -170,9 +170,22 @@ export class Zones implements OnDestroy {
   protected hoverHandCard(card: ZoneCard | null): void {
     // Its second face, if it has one, comes from the card database like the
     // related names do — so `v` over a double-faced hand card can flip it too.
+    // The id travels along so a hover that outlives the card can be spotted.
     this.interactions.hoveredHandCard.set(
-      card ? { name: card.name, src: card.src, back: this.db.lookup(card.name)?.back } : null,
+      card
+        ? { id: card.id, name: card.name, src: card.src, back: this.db.lookup(card.name)?.back }
+        : null,
     );
+  }
+
+  /**
+   * Forget which hand card the cursor is over. Called wherever the hand moves
+   * out from under a still cursor or is covered up: neither fires
+   * `pointerleave`, and hover would otherwise stay on a card the player is no
+   * longer pointing at. The next pointer move re-establishes it.
+   */
+  private clearHandHover(): void {
+    this.interactions.hoveredHandCard.set(null);
   }
 
   protected onResize(): void {
@@ -187,7 +200,7 @@ export class Zones implements OnDestroy {
    */
   protected openHotkeys(): void {
     this.interactions.hoveredId.set(null);
-    this.interactions.hoveredHandCard.set(null);
+    this.clearHandHover();
     this.showHotkeys.set(true);
   }
 
@@ -278,6 +291,8 @@ export class Zones implements OnDestroy {
     event.preventDefault();
     const max = overflow / 2;
     this.handScroll.set(Math.max(-max, Math.min(max, this.handScroll() - event.deltaY)));
+    // The cards just slid under the cursor without a pointer event to say so.
+    this.clearHandHover();
   }
 
   /** True when the screen point sits over one of my zone widgets. */
@@ -335,6 +350,9 @@ export class Zones implements OnDestroy {
   ): void {
     if (event.button !== 0) return;
     event.preventDefault(); // no native image drag / text selection
+    // Whatever happens next — played onto the table, or dropped back into a
+    // re-fanned hand — the card under the cursor is about to move.
+    this.clearHandHover();
     this.pendingDrag = { card, x: event.clientX, y: event.clientY, source };
     // Manual listeners (not host bindings): document-wide pointermove is only
     // interesting for the few frames between press and drag hand-off.
@@ -479,6 +497,7 @@ export class Zones implements OnDestroy {
     this.menu.set(null);
     this.revealOpen.set(false);
     this.revealDraft.set('');
+    this.clearHandHover(); // the panel that follows covers the hand
   }
 
   /** Reveal the number typed into the menu's "X" box (positive integers only). */
@@ -494,6 +513,7 @@ export class Zones implements OnDestroy {
 
   protected examine(uid: string, kind: OpenZoneKind): void {
     this.menu.set(null);
+    this.clearHandHover(); // the dialog covers the hand
     this.examining.set({ uid, kind });
   }
 

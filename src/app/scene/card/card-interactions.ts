@@ -90,6 +90,13 @@ export interface SpawnCard {
   related?: string[];
 }
 
+/** A card the cursor is over in the hand UI: its zone-card id (so a hover that
+ * outlived the card can be spotted) plus what the view popup needs. */
+export interface HoveredHandCard extends SpawnCard {
+  /** Id of the ZoneCard in my hand. */
+  id: string;
+}
+
 /**
  * Pointer/keyboard layer for the table (the design doc's "CardContext"):
  * raycasts the cursor against registered card objects for hover highlight and
@@ -168,8 +175,22 @@ export class CardInteractions {
    * The card the cursor is over in the hand UI, published by the Zones overlay.
    * Hover picking is raycast against the scene, which cannot see DOM cards, so
    * the hand tells us instead — that is what lets the `v` hotkey work there.
+   * Read `handHover()`, not this: a published hover can outlive the card.
    */
-  readonly hoveredHandCard = signal<SpawnCard | null>(null);
+  readonly hoveredHandCard = signal<HoveredHandCard | null>(null);
+  /**
+   * The hand hover, ignored once that card has left my hand. `pointerleave`
+   * only fires when the cursor leaves the element — not when the element leaves
+   * from under the cursor, which is exactly what playing the card does (the
+   * `@for` destroys its button, and Angular's listener with it). Without this
+   * check `v` kept opening the card you last touched in your hand, outranking
+   * whatever you were actually pointing at, because the hand wins the hotkey.
+   */
+  readonly handHover = computed<HoveredHandCard | null>(() => {
+    const hovered = this.hoveredHandCard();
+    if (!hovered) return null;
+    return this.zones.mine().hand.some((card) => card.id === hovered.id) ? hovered : null;
+  });
   readonly relatedPanel = signal<RelatedAnchor | null>(null);
   readonly utilWindow = signal<UtilAnchor | null>(null);
   /** How many cards the context menu's group actions would hit (1 = just this card). */
@@ -550,8 +571,17 @@ export class CardInteractions {
       this.marquee.set(this.rectBetween(marqueeStart, event));
       return;
     }
-    // Hover only from moves over the canvas itself, not the DOM overlays.
-    if (event.target === this.canvas) this.hoveredId.set(this.pick(event));
+    // Hover follows the cursor in both directions: a move over the canvas picks
+    // (and proves the cursor is not on a hand card, healing a hand hover whose
+    // pointerleave never fired), a move anywhere else means no table card is
+    // under the cursor. Leaving it set is how a hotkey used to act on a card the
+    // player had long since moved away from.
+    if (event.target === this.canvas) {
+      this.hoveredId.set(this.pick(event));
+      this.hoveredHandCard.set(null);
+    } else {
+      this.hoveredId.set(null);
+    }
   };
 
   private readonly onPointerDown = (event: PointerEvent): void => {
@@ -714,7 +744,7 @@ export class CardInteractions {
     // A card in the hand answers to `v` just like one on the table
     // (finaltouches.md). It wins while the cursor is over it, since the
     // raycast hover it would otherwise fall through to is stale by then.
-    const handCard = this.hoveredHandCard();
+    const handCard = this.handHover();
     if (handCard && event.key === 'v') {
       event.preventDefault();
       this.viewImage.set(handCard);
