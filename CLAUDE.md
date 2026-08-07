@@ -169,22 +169,31 @@ Clicking empty table, or grabbing/right-clicking a card that is not selected, cl
 
 **Table items** (`designdocs/additionalitems.md`) live in `src/app/scene/item/`: `ItemStore`
 (root) projects `item:` world objects into `ItemState` (kind, position, absolute unwrapped
-`rotation`, `value`, `variant`, `attachedTo`) exactly like `CardStore` does for cards, and the
+`rotation`, `value`, `variant`, `color`, `attachedTo`) exactly like `CardStore` does for
+cards, and the
 `Item` component renders one — a placeholder body from `item-geometry.ts` (pip-textured d6
 box, polyhedra for d4/d12/d20 with a value label sprite, a two-faced coin cylinder, a counter
 disc whose canvas texture prints "+2/+2") unless a GLB is registered in `ITEM_MODEL_URLS`
 (`scene-assets.ts`), in which case it clones that instead. An item picked in the util window
 is not dropped at the click point: it spawns local-only (`ItemStore.addLocal`, mirroring
 `CardStore`) already attached to the cursor via `CardInteractions.beginSpawnDrag`, and a
-*click* on the table (not a release — the button isn't held) places it, which is when the
+_click_ on the table (not a release — the button isn't held) places it, which is when the
 shared world and the history first see it; Escape discards it unseen
 (`designdocs/tableitems.md`). Rolls and flips are plain state
 writes: `roll()`/`flip()` add whole turns to `rotation` (the d6 in quarter turns, so the pips
 on top _are_ the logged result; the coin in half turns, so odd counts land it on the other
 side) and every client lerps its own mesh over 1.5 s — no frame streaming and no physics.
+Dice carry a **`color`** from the four-swatch palette in `DIE_PALETTE` (green/blue/red/yellow,
+picked in the util window and sticky between spawns); it paints the d6's pip faces, the
+polyhedra, the number label, and any registered GLB's untextured materials. A polyhedron's
+label is one canvas repainted in place, so while the die tumbles it can cycle random in-range
+numbers and only "decide" on `state.value` when it lands (`designdocs/newmechanics.md`).
 Counters count up on left-click, down on right-click, have no menu (delete hotkey while
 hovered), and attach to a card when dropped on one: `attachedTo` + a position that becomes an
-offset from that card's origin, so the counter follows it and leaves the table with it.
+offset from that card's origin, so the counter follows it and leaves the table with it. Their
+`variant` is `plus` / `minus` / **`x`** — the last a plain multiplier ("2x") on a squared body
+rather than a disc, which is why `counterFaceSlot()` exists (the printed face is material 1 on
+the cylinder, 2 on the box).
 
 Player zones (hand/deck/graveyard/exile) live in `src/app/zones/`: `ZoneStore` (root service)
 projects `zone:<uid>:<kind>` world objects (`{ ownerName, cards }`; whole-zone LWW writes) and
@@ -197,7 +206,8 @@ table to play it — `startDrag` arms a press on pointerdown; past a small thres
 off to `CardInteractions.beginDragFromHand`, spawning the card face-up at `seatYaw()` and
 following the cursor; releasing over the table commits, releasing off-table returns it to the
 hand; a hand too wide to fit is pannable by wheeling over it — `onHandWheel` shifts `handScroll`).
-My deck pile draws on **left-click** and opens a right-click menu (shuffle only); the graveyard
+My deck pile draws on **left-click** and opens a right-click menu (shuffle, and **Reveal** —
+the top 1–5 cards, or an X typed in); the graveyard
 and exile piles open on click. A card dragged onto a zone widget is absorbed by that zone:
 Zones registers a
 `CardDropTarget` per kind (hit-tested with `elementFromPoint`) that calls `takeFromTable`.
@@ -209,6 +219,17 @@ what resolves every decklist entry against the card database, calls `loadDeck()`
 created with the shuffled deck), and starts prefetching the card images, so merely browsing
 decks never costs a download. `refreshOwnerName()` only renames zones that already exist
 (rejoin).
+
+**Reveal / scry** (`designdocs/newmechanics.md`) is `src/app/zones/reveal.ts` (pure) plus the
+`RevealPanel` component (`reveal-panel/`). `ZoneStore.revealTop(n)` only _peeks_ — it moves
+nothing and logs that a look happened, never what was seen — and the panel then routes each
+card by drag onto hand / deck (top) / bottom / graveyard, committing every step through
+`applyReveal()` (deck + hand + graveyard in **one** batch). The load-bearing invariant is that
+**no card is ever in limbo**: a revealed card the player has not placed is still sitting in the
+deck, so `revealZones()` derives the deck as `top ++ pending ++ rest ++ bottom` and abandoning
+the panel (or the tab) loses nothing. Cards put back on top go on as a stack — last placed is
+first drawn. `undo()` pops one entry off the session's history, which starts at the untouched
+state, so undo walks all the way back to the moment of the reveal.
 
 The in-game overlays are sized in the global **`--u`** unit (`styles.scss`): 1% of the largest
 16:9 box that fits the viewport (`min(1vw, 1.7778vh)`), with `--ui-gap` insetting widgets from
@@ -231,7 +252,7 @@ images resolved via the card database (white placeholder while loading, pink for
 name); "← Back" returns to the overview.
 **The card API is user-deposited** (`designdocs/legal.md`): the app ships **no** card-data
 endpoint of its own. `CardApiService` (root, `src/app/carddb/card-api.service.ts`) holds the
-base URL of the Scryfall-*compatible* API the user has provided — registered users keep it in
+base URL of the Scryfall-_compatible_ API the user has provided — registered users keep it in
 their account info (auth `user_metadata['card_api_url']`, written via
 `SupabaseService.setCardApiUrl`), guests only temporarily in sessionStorage; a guest's deposit
 follows them into a fresh account like decks do. The Decks screen's header has the

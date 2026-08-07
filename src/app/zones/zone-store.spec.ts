@@ -113,6 +113,46 @@ describe('ZoneStore', () => {
     expect(room.actions).toEqual(['shuffled their deck']);
   });
 
+  it('revealTop peeks the top cards without moving anything, and logs only the look', () => {
+    room.setWorldObject('zone:user-1:deck', {
+      ownerName: 'Tim',
+      cards: [card('a', 'A'), card('b', 'B'), card('c', 'C')],
+    });
+    room.batches.length = 0;
+
+    expect(store.revealTop(2)).toEqual([card('a', 'A'), card('b', 'B')]);
+    expect(store.mine().deck).toHaveLength(3); // nothing has moved yet
+    expect(room.batches).toEqual([]);
+    // The history never says what was seen — the reveal is to me alone.
+    expect(room.actions).toEqual(['looked at the top 2 cards of their deck']);
+  });
+
+  it('revealTop clamps to the deck and does nothing at all when it is empty', () => {
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [card('a', 'A')] });
+    expect(store.revealTop(5)).toEqual([card('a', 'A')]);
+    expect(room.actions).toEqual(['looked at the top card of their deck']);
+
+    room.actions.length = 0;
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [] });
+    expect(store.revealTop(3)).toEqual([]);
+    expect(room.actions).toEqual([]);
+  });
+
+  it('applyReveal writes deck, hand and graveyard in ONE batch', () => {
+    store.loadDeck([card('a', 'A')]);
+    room.batches.length = 0;
+    store.applyReveal(
+      { deck: [], hand: [card('a', 'A')], graveyard: [] },
+      'put a revealed card into their hand',
+    );
+    expect(room.batches).toEqual([
+      ['zone:user-1:deck', 'zone:user-1:hand', 'zone:user-1:graveyard'],
+    ]);
+    expect(store.mine().hand).toEqual([card('a', 'A')]);
+    expect(store.mine().deck).toEqual([]);
+    expect(room.actions.at(-1)).toBe('put a revealed card into their hand');
+  });
+
   it('takeFromTable removes the table card and puts it in the zone (deck = on top)', () => {
     room.setWorldObject('card:t1', { name: 'Water Worm' });
     room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [card('old', 'Old')] });

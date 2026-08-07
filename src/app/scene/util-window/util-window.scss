@@ -80,6 +80,44 @@
     }
   }
 
+  // Die colours (newmechanics.md): the chosen swatch stays lit and every die
+  // spawned from the row below is cast in it.
+  .swatches {
+    display: flex;
+    gap: 6px;
+    padding: 2px 8px 4px;
+  }
+
+  .swatch {
+    width: 20px;
+    height: 20px;
+    border: 2px solid transparent;
+    border-radius: 5px;
+    cursor: pointer;
+
+    &.green {
+      background: #2f8f4e;
+    }
+    &.blue {
+      background: #3563cf;
+    }
+    &.red {
+      background: #c0392f;
+    }
+    &.yellow {
+      background: #e0b32c;
+    }
+
+    &:hover {
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    &.on {
+      border-color: #fff;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+    }
+  }
+
   .sub {
     display: flex;
     gap: 4px;

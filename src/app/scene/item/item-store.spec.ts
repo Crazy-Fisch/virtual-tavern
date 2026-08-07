@@ -4,7 +4,15 @@ import { RoomService } from '../../room/room.service';
 import { FakeRoomService } from '../../room/testing/fake-room.service';
 import { D6_FACE_NORMALS, D6_FACE_VALUES } from './item-geometry';
 import { ItemStore } from './item-store';
-import { ItemKind, ItemState, newItem } from './item.types';
+import {
+  CounterVariant,
+  DEFAULT_ITEM_COLOR,
+  ItemKind,
+  ItemState,
+  counterLabel,
+  itemLabel,
+  newItem,
+} from './item.types';
 
 const HALF_PI = Math.PI / 2;
 
@@ -36,8 +44,8 @@ describe('ItemStore', () => {
     store = TestBed.inject(ItemStore);
   });
 
-  function spawn(kind: ItemKind, variant: 'plus' | 'minus' = 'plus'): ItemState {
-    const item = newItem(kind, [0, 0.21, 0], variant);
+  function spawn(kind: ItemKind, variant: CounterVariant = 'plus'): ItemState {
+    const item = newItem(kind, [0, 0.21, 0], { variant });
     store.add(item);
     room.actions.length = 0;
     return item;
@@ -122,6 +130,40 @@ describe('ItemStore', () => {
     expect(room.actions).toEqual(['set a counter to −2/−2']);
   });
 
+  it('an x counter counts in plain multiples and never drops below 1x', () => {
+    const counter = spawn('counter', 'x');
+    store.bump(counter.id, 1);
+    store.bump(counter.id, 1);
+    store.bump(counter.id, -1);
+    expect(store.item(counter.id)!.value).toBe(2);
+    expect(room.actions).toEqual([
+      'set a counter to 2x',
+      'set a counter to 3x',
+      'set a counter to 2x',
+    ]);
+
+    room.actions.length = 0;
+    store.bump(counter.id, -1);
+    store.bump(counter.id, -1);
+    expect(store.item(counter.id)!.value).toBe(1);
+    expect(room.actions).toEqual(['set a counter to 1x']);
+  });
+
+  it('carries the die colour through the shared world, defaulting old dice', () => {
+    const die = newItem('d20', [0, 0.21, 0], { color: 'green' });
+    store.add(die);
+    expect(store.item(die.id)!.color).toBe('green');
+    // A die written before the palette existed, and a nonsense value, both fall
+    // back rather than reaching the renderer as something unpaintable.
+    room.setWorldObject('item:old', { kind: 'd6' });
+    room.setWorldObject('item:bad', { kind: 'd6', color: 'chartreuse' });
+    const colors = store
+      .items()
+      .filter((i) => i.id !== die.id)
+      .map((i) => i.color);
+    expect(colors).toEqual([DEFAULT_ITEM_COLOR, DEFAULT_ITEM_COLOR]);
+  });
+
   it('rolling, flipping and bumping only apply to the matching kind', () => {
     const coin = spawn('coin');
     store.roll(coin.id);
@@ -156,6 +198,14 @@ describe('ItemStore', () => {
     expect(store.item(item.id)).toBeUndefined();
     expect(room.worldState()[item.id]).toBeUndefined();
     expect(room.actions).toEqual([]);
+  });
+
+  it('labels each counter flavour on its face and in the history', () => {
+    expect(counterLabel(2, 'plus')).toBe('+2/+2');
+    expect(counterLabel(2, 'minus')).toBe('−2/−2');
+    expect(counterLabel(2, 'x')).toBe('2x');
+    expect(itemLabel({ kind: 'counter', variant: 'x' })).toBe('x counter');
+    expect(itemLabel({ kind: 'counter', variant: 'minus' })).toBe('−1/−1 counter');
   });
 
   it('previews are local overrides that update() commits and clearPreview() discards', () => {

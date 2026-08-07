@@ -3,7 +3,17 @@ import { Euler, Quaternion, Vector3 } from 'three';
 import { RoomService } from '../../room/room.service';
 import { WorldObjectData } from '../../room/room.types';
 import { D6_FACE_NORMALS, D6_FACE_VALUES } from './item-geometry';
-import { DIE_FACES, ITEM_PREFIX, ItemKind, ItemState, counterLabel, isDice } from './item.types';
+import {
+  DEFAULT_ITEM_COLOR,
+  DIE_FACES,
+  ITEM_PREFIX,
+  ItemKind,
+  ItemState,
+  counterLabel,
+  isCounterVariant,
+  isDice,
+  isItemColor,
+} from './item.types';
 
 const TAU = Math.PI * 2;
 const QUARTER = Math.PI / 2;
@@ -24,7 +34,9 @@ function toItem(id: string, data: WorldObjectData): ItemState {
     position: [Number(pos[0]) || 0, Number(pos[1]) || 0, Number(pos[2]) || 0],
     rotation: [Number(rot[0]) || 0, Number(rot[1]) || 0, Number(rot[2]) || 0],
     value: typeof data['value'] === 'number' ? data['value'] : 1,
-    variant: data['variant'] === 'minus' ? 'minus' : 'plus',
+    variant: isCounterVariant(data['variant']) ? data['variant'] : 'plus',
+    // Dice predating the palette (newmechanics.md) simply take the default.
+    color: isItemColor(data['color']) ? data['color'] : DEFAULT_ITEM_COLOR,
     attachedTo: typeof data['attachedTo'] === 'string' ? data['attachedTo'] : null,
   };
 }

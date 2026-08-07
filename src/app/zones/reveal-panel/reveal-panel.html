@@ -1,0 +1,72 @@
+<app-dialog [heading]="'Top ' + cards().length + ' of your deck'" [fit]="true" (close)="done()">
+  <div class="reveal">
+    <!-- The revealed cards in deck order: top-left is the first card off the
+         deck, bottom-right the last. A placed card leaves an empty slot behind
+         so the first/last badges keep pointing at the same corners. -->
+    <div class="grid">
+      @for (slot of slots(); track slot.card.id; let i = $index; let last = $last) {
+        <figure class="slot" [class.placed]="slot.placed">
+          @if (slot.placed) {
+            <div class="gap"></div>
+          } @else {
+            <img
+              [src]="slot.card.src"
+              [alt]="slot.card.name"
+              [title]="'Drag ' + slot.card.name + ' onto a zone below'"
+              crossorigin="anonymous"
+              draggable="false"
+              (pointerdown)="startDrag($event, slot.card, slot.placed)"
+            />
+          }
+          @if (i === 0) {
+            <span class="marker first">first</span>
+          }
+          @if (last && slots().length > 1) {
+            <span class="marker last">last</span>
+          }
+        </figure>
+      }
+    </div>
+
+    <!-- Drop zones. Hit-tested by data-target, so the floating ghost (which is
+         pointer-events: none) never gets in the way. -->
+    <div class="targets">
+      @for (target of targets; track target) {
+        <div
+          class="target"
+          [attr.data-target]="target"
+          [class.over]="hovered() === target"
+          [class.armed]="dragging() !== null"
+        >
+          <span class="target-name">{{ targetLabels[target] }}</span>
+          <div class="target-cards">
+            @for (c of placed(target); track c.id) {
+              <img [src]="c.src" [alt]="c.name" [title]="c.name" crossorigin="anonymous" />
+            } @empty {
+              <span class="target-empty">drop here</span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <footer class="foot">
+      <button type="button" class="undo" [disabled]="!canUndo()" (click)="undoLast()">Undo</button>
+      <span class="left">{{ left() }} left</span>
+      <button type="button" class="done" (click)="done()">Done</button>
+    </footer>
+  </div>
+</app-dialog>
+
+<!-- The dragged card, following the cursor above everything. -->
+@if (dragging(); as d) {
+  <img
+    class="ghost"
+    [src]="d.card.src"
+    [alt]="d.card.name"
+    [style.left.px]="d.x"
+    [style.top.px]="d.y"
+    crossorigin="anonymous"
+    draggable="false"
+  />
+}

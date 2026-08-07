@@ -8,6 +8,8 @@ import { CardDropTarget, CardInteractions, DRAG_Y } from '../scene/card/card-int
 import { CardStore } from '../scene/card/card-store';
 import { newCardId } from '../scene/card/card.types';
 import { Dialog } from '../shared/dialog/dialog';
+import { RevealPanel } from './reveal-panel/reveal-panel';
+import { REVEAL_COUNTS } from './reveal';
 import { ZoneStore } from './zone-store';
 import { OpenZoneKind, PlayerZones, ZONE_KINDS, ZoneCard, ZoneKind } from './zone.types';
 
@@ -65,7 +67,7 @@ const ZONE_SELECTORS: Readonly<Record<ZoneKind, string>> = {
  */
 @Component({
   selector: 'app-zones',
-  imports: [Dialog],
+  imports: [Dialog, RevealPanel],
   templateUrl: './zones.html',
   styleUrl: './zones.scss',
   standalone: true,
@@ -85,6 +87,7 @@ export class Zones implements OnDestroy {
   protected readonly deckSize = deckSize;
   protected readonly startLives = START_LIVES;
   protected readonly maxHand = MAX_VISIBLE_HAND;
+  protected readonly revealCounts = REVEAL_COUNTS;
 
   /** Pressed card; becomes a drag past HAND_DRAG_THRESHOLD_PX. */
   private pendingDrag: PendingDrag | null = null;
@@ -100,6 +103,12 @@ export class Zones implements OnDestroy {
   protected readonly pendingDeck = signal<Deck | null>(null);
   /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
   protected readonly handScroll = signal(0);
+  /** Whether the deck menu's Reveal row has its 1-5/X choices expanded. */
+  protected readonly revealOpen = signal(false);
+  /** The "X" count being typed into the reveal row. */
+  protected readonly revealDraft = signal('');
+  /** Cards currently shown in the scry window, or null when it is closed. */
+  protected readonly revealing = signal<ZoneCard[] | null>(null);
   /** Viewport size, tracked so the hand geometry re-fits on resize. */
   private readonly viewport = signal({ w: window.innerWidth, h: window.innerHeight });
 
@@ -395,6 +404,8 @@ export class Zones implements OnDestroy {
     event.stopPropagation();
     const host = (event.currentTarget as HTMLElement).closest('app-zones')!;
     const rect = host.getBoundingClientRect();
+    this.revealOpen.set(false); // the deck menu always opens collapsed
+    this.revealDraft.set('');
     this.menu.set({ kind, x: event.clientX - rect.left, y: event.clientY - rect.top });
   }
 
@@ -406,6 +417,33 @@ export class Zones implements OnDestroy {
   protected shuffle(): void {
     this.menu.set(null);
     this.zones.shuffle();
+  }
+
+  // ---------- reveal (scry) ----------
+
+  /**
+   * Look at the top `count` cards of my deck and open the scry window on them
+   * (newmechanics.md). Nothing has moved yet — the panel commits each card as
+   * it is dropped on a zone — so a deck with fewer cards than asked for simply
+   * reveals what it has, and an empty deck opens nothing.
+   */
+  protected reveal(count: number): void {
+    this.menu.set(null);
+    this.revealOpen.set(false);
+    this.revealDraft.set('');
+    const cards = this.zones.revealTop(count);
+    if (cards.length > 0) this.revealing.set(cards);
+  }
+
+  /** Reveal the number typed into the menu's "X" box (positive integers only). */
+  protected revealDrafted(): void {
+    const count = Number.parseInt(this.revealDraft(), 10);
+    if (!Number.isFinite(count) || count < 1) return;
+    this.reveal(count);
+  }
+
+  protected onRevealDraft(event: Event): void {
+    this.revealDraft.set((event.target as HTMLInputElement).value);
   }
 
   protected examine(uid: string, kind: OpenZoneKind): void {

@@ -17,8 +17,29 @@ export const DIE_FACES: Readonly<Record<DiceKind, number>> = { d4: 4, d6: 6, d12
 
 export type ItemKind = DiceKind | 'coin' | 'counter';
 
-/** A counter is either a +1/+1 or a −1/−1 (its value scales the number shown). */
-export type CounterVariant = 'plus' | 'minus';
+/**
+ * Colours a die can be cast in (newmechanics.md). Stored on the item so every
+ * player sees the same one; the palette itself lives in `item-geometry.ts`.
+ */
+export type ItemColor = 'green' | 'blue' | 'red' | 'yellow';
+export const ITEM_COLORS: readonly ItemColor[] = ['green', 'blue', 'red', 'yellow'];
+export const DEFAULT_ITEM_COLOR: ItemColor = 'red';
+
+export function isItemColor(value: unknown): value is ItemColor {
+  return typeof value === 'string' && (ITEM_COLORS as readonly string[]).includes(value);
+}
+
+/**
+ * Counter flavours: +1/+1, −1/−1, and the plain multiplier counter that just
+ * shows "2x" (newmechanics.md). The multiplier is the odd one out visually —
+ * it gets a squared body rather than the disc the ±1/±1 counters wear.
+ */
+export type CounterVariant = 'plus' | 'minus' | 'x';
+export const COUNTER_VARIANTS: readonly CounterVariant[] = ['plus', 'minus', 'x'];
+
+export function isCounterVariant(value: unknown): value is CounterVariant {
+  return typeof value === 'string' && (COUNTER_VARIANTS as readonly string[]).includes(value);
+}
 
 /**
  * Actions offered by an item's right-click menu. Counters have no menu — they
@@ -56,15 +77,23 @@ export interface ItemState {
   value: number;
   /** Counter flavour; ignored by dice and coins. */
   variant: CounterVariant;
+  /** Die colour; ignored by coins and counters, which have their own looks. */
+  color: ItemColor;
   /** Card world-id this counter is attached to, or null when it lies on the table. */
   attachedTo: string | null;
+}
+
+/** How a fresh item differs from the defaults (counter flavour, die colour). */
+export interface NewItemOptions {
+  variant?: CounterVariant;
+  color?: ItemColor;
 }
 
 /** A fresh item of the given kind, resting unrotated at a table position. */
 export function newItem(
   kind: ItemKind,
   position: [number, number, number],
-  variant: CounterVariant = 'plus',
+  options: NewItemOptions = {},
 ): ItemState {
   return {
     id: newItemId(),
@@ -72,7 +101,8 @@ export function newItem(
     position,
     rotation: [0, 0, 0],
     value: 1,
-    variant,
+    variant: options.variant ?? 'plus',
+    color: options.color ?? DEFAULT_ITEM_COLOR,
     attachedTo: null,
   };
 }
@@ -80,13 +110,14 @@ export function newItem(
 /** Human-readable name for history lines ("rolled a 14 on a d20"). */
 export function itemLabel(state: Pick<ItemState, 'kind' | 'variant'>): string {
   if (state.kind === 'counter')
-    return state.variant === 'minus' ? '−1/−1 counter' : '+1/+1 counter';
+    return state.variant === 'x' ? 'x counter' : `${counterLabel(1, state.variant)} counter`;
   if (state.kind === 'coin') return 'coin';
   return state.kind;
 }
 
-/** Text a counter shows on its face, e.g. "+2/+2". */
+/** Text a counter shows on its face, e.g. "+2/+2" or "2x". */
 export function counterLabel(value: number, variant: CounterVariant): string {
+  if (variant === 'x') return `${value}x`;
   const sign = variant === 'minus' ? '−' : '+';
   return `${sign}${value}/${sign}${value}`;
 }

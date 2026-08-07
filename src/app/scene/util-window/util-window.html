@@ -13,6 +13,22 @@
         Dice <span class="chevron">{{ openGroup() === 'dice' ? '▾' : '▸' }}</span>
       </button>
       @if (openGroup() === 'dice') {
+        <!-- Pick the colour first, then the die: the swatch sticks, so a whole
+             set of green dice is four clicks (newmechanics.md). -->
+        <div class="swatches">
+          @for (color of diceColors; track color) {
+            <button
+              type="button"
+              class="swatch"
+              [class]="'swatch ' + color"
+              [class.on]="diceColor() === color"
+              [title]="color"
+              [attr.aria-label]="color + ' dice'"
+              [attr.aria-pressed]="diceColor() === color"
+              (click)="diceColor.set(color)"
+            ></button>
+          }
+        </div>
         <div class="sub">
           @for (kind of diceKinds; track kind) {
             <button type="button" (click)="addDie(kind)">{{ kind }}</button>
@@ -25,8 +41,11 @@
       </button>
       @if (openGroup() === 'counters') {
         <div class="sub">
-          <button type="button" (click)="addCounter('plus')">+1/+1</button>
-          <button type="button" (click)="addCounter('minus')">−1/−1</button>
+          @for (variant of counterVariants; track variant) {
+            <button type="button" (click)="addCounter(variant)">
+              {{ counterLabel(1, variant) }}
+            </button>
+          }
         </div>
       }
     </div>

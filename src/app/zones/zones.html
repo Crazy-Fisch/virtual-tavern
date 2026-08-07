@@ -158,10 +158,40 @@
   <div class="zone-menu" [style.left.px]="m.x" [style.top.px]="m.y">
     @if (m.kind === 'deck') {
       <button type="button" (click)="shuffle()">Shuffle</button>
+      <!-- Reveal the top 1-5 cards, or as many as typed into X
+           (newmechanics.md "scrying & other actions"). -->
+      <button type="button" (click)="revealOpen.set(!revealOpen())">
+        Reveal… <span class="chevron">{{ revealOpen() ? '▾' : '▸' }}</span>
+      </button>
+      @if (revealOpen()) {
+        <div class="reveal-counts">
+          @for (n of revealCounts; track n) {
+            <button type="button" (click)="reveal(n)">{{ n }}</button>
+          }
+        </div>
+        <div class="reveal-x">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            placeholder="X"
+            aria-label="Number of cards to reveal"
+            [value]="revealDraft()"
+            (input)="onRevealDraft($event)"
+            (keydown.enter)="revealDrafted()"
+          />
+          <button type="button" (click)="revealDrafted()">Reveal</button>
+        </div>
+      }
     } @else {
       <button type="button" (click)="examine(zones.mine().uid, m.kind)">Examine</button>
     }
   </div>
+}
+
+<!-- The scry window: the revealed cards, dragged onto hand/deck/bottom/grave. -->
+@if (revealing(); as revealed) {
+  <app-reveal-panel [cards]="revealed" (close)="revealing.set(null)" />
 }
 
 @if (handMenu(); as hm) {

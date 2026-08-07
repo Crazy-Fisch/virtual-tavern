@@ -154,6 +154,39 @@ export class ZoneStore {
     this.room.sendAction('shuffled their deck');
   }
 
+  /**
+   * Look at the top `count` cards of my deck (newmechanics.md "scrying"):
+   * nothing moves, so this is only the peek — the reveal panel writes back
+   * through `applyReveal` as the player deals with each card. The history
+   * records that a look happened, never what was seen.
+   */
+  revealTop(count: number): ZoneCard[] {
+    const deck = this.mine().deck;
+    const cards = deck.slice(0, Math.max(0, Math.min(Math.floor(count), deck.length)));
+    if (cards.length === 0) return [];
+    this.room.sendAction(
+      `looked at the top ${cards.length === 1 ? 'card' : `${cards.length} cards`} of their deck`,
+    );
+    return cards;
+  }
+
+  /**
+   * Commit one step of a reveal: the three zones it can touch, written in ONE
+   * batch so a card can never be in two zones (or none) even if the request is
+   * lost. Undo goes through here too — it is just an earlier set of zones.
+   */
+  applyReveal(
+    zones: { deck: ZoneCard[]; hand: ZoneCard[]; graveyard: ZoneCard[] },
+    action: string,
+  ): void {
+    this.writeZones([
+      ['deck', zones.deck],
+      ['hand', zones.hand],
+      ['graveyard', zones.graveyard],
+    ]);
+    this.room.sendAction(action);
+  }
+
   /** Move a card from the table into one of my zones (deck = on top). */
   takeFromTable(card: CardState, kind: ZoneKind): void {
     // A hand card dropped onto a zone widget mid-drag is still local-only —

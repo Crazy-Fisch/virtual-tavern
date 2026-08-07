@@ -2,7 +2,18 @@ import { Component, ElementRef, effect, inject, signal, viewChild } from '@angul
 import { CardApiService } from '../../carddb/card-api.service';
 import { CardInteractions, DRAG_Y, UtilAnchor } from '../card/card-interactions';
 import { CardHit, CardSearchService } from '../card/card-search.service';
-import { CounterVariant, DICE_KINDS, DiceKind, ItemKind, newItem } from '../item/item.types';
+import {
+  COUNTER_VARIANTS,
+  CounterVariant,
+  DEFAULT_ITEM_COLOR,
+  DICE_KINDS,
+  DiceKind,
+  ITEM_COLORS,
+  ItemColor,
+  ItemKind,
+  counterLabel,
+  newItem,
+} from '../item/item.types';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY = 2;
@@ -11,7 +22,8 @@ const MIN_QUERY = 2;
  * The "add to game" popup (plain Angular/HTML over the canvas), opened by
  * right-clicking empty table (CardInteractions owns the open/close state and
  * the world position where added items appear): the game items — dice
- * (d4/d6/d12/d20), a coin, and +1/+1 or −1/−1 counters, each behind its own
+ * (d4/d6/d12/d20, cast in the colour picked from the swatch row), a coin, and
+ * +1/+1, −1/−1 or plain "x" counters, each behind its own
  * expanding row — above a card search (against the user-deposited card API,
  * see legal.md; tokens included) with a scrollable 3-wide result grid. A hit
  * is *dragged* out of the grid: onto the table to add it there, or onto the
@@ -31,8 +43,13 @@ export class UtilWindow {
   private readonly api = inject(CardApiService);
 
   protected readonly diceKinds = DICE_KINDS;
+  protected readonly diceColors = ITEM_COLORS;
+  protected readonly counterVariants = COUNTER_VARIANTS;
+  protected readonly counterLabel = counterLabel;
   /** Which item row is expanded ('dice' / 'counters'), or null. */
   protected readonly openGroup = signal<'dice' | 'counters' | null>(null);
+  /** Colour the next die is cast in (newmechanics.md); sticks between spawns. */
+  protected readonly diceColor = signal<ItemColor>(DEFAULT_ITEM_COLOR);
   protected readonly query = signal('');
   protected readonly results = signal<CardHit[]>([]);
   protected readonly searching = signal(false);
@@ -111,7 +128,7 @@ export class UtilWindow {
   }
 
   protected addDie(kind: DiceKind): void {
-    this.addItem(kind);
+    this.addItem(kind, { color: this.diceColor() });
   }
 
   protected addCoin(): void {
@@ -119,7 +136,7 @@ export class UtilWindow {
   }
 
   protected addCounter(variant: CounterVariant): void {
-    this.addItem('counter', variant);
+    this.addItem('counter', { variant });
   }
 
   /**
@@ -138,11 +155,14 @@ export class UtilWindow {
    * mouse moves — and a click on the table places it, which is when it reaches
    * the other players and the history.
    */
-  private addItem(kind: ItemKind, variant: CounterVariant = 'plus'): void {
+  private addItem(
+    kind: ItemKind,
+    options: { variant?: CounterVariant; color?: ItemColor } = {},
+  ): void {
     const anchor = this.interactions.utilWindow();
     if (!anchor) return;
     const [x, , z] = anchor.world;
-    this.interactions.beginSpawnDrag(newItem(kind, [x, DRAG_Y, z], variant));
+    this.interactions.beginSpawnDrag(newItem(kind, [x, DRAG_Y, z], options));
     this.close();
   }
 }

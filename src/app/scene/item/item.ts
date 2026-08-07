@@ -10,6 +10,7 @@ import {
 import {
   Box3,
   BufferGeometry,
+  CanvasTexture,
   Group,
   Mesh,
   MeshStandardMaterial,
@@ -28,16 +29,20 @@ import {
   COIN_RADIUS,
   COUNTER_RADIUS,
   DIE_RADIUS,
+  ValueCanvas,
+  counterFaceCount,
+  counterFaceSlot,
+  dieColorHex,
   makeCoinGeometry,
   makeCoinTextures,
   makeCounterGeometry,
   makeCounterTexture,
   makeD6PipTextures,
   makeDiceGeometry,
-  makeValueTexture,
+  makeValueCanvas,
   restLift,
 } from './item-geometry';
-import { ItemKind, ItemState, isDice } from './item.types';
+import { DIE_FACES, DiceKind, ItemKind, ItemState, isDice } from './item.types';
 
 /** Slight white tint (emissive) applied while hovered, matching cards. */
 const HOVER_TINT = 0x333333;
@@ -51,8 +56,15 @@ const FLIP_MS = 1200;
  * gesture: clearly airborne, still on screen under the overhead camera.
  */
 const FLIP_HOP = 0.5;
+/**
+ * How often the label of a tumbling polyhedron shows a different number. The
+ * die's result is decided the moment it is rolled (it has to be — it is shared
+ * state), but showing it for the whole 1.5 s tumble gives the throw away, so
+ * the label cycles random in-range numbers until the die settles
+ * (newmechanics.md "dice objects").
+ */
+const SCRAMBLE_MS = 70;
 /** Placeholder body colours per kind. */
-const DICE_COLOR = 0xe8e3d6;
 const COIN_EDGE_COLOR = 0xb99442;
 
 /** Largest dimension a registered GLB is normalised to, matching the placeholder. */
@@ -91,6 +103,11 @@ export class Item implements OnDestroy {
   private pivot?: Group;
   private body?: Object3D;
   private label?: Sprite;
+  /** Repaintable canvas behind the label, and the texture uploading it. */
+  private labelCanvas?: ValueCanvas;
+  private labelTexture?: CanvasTexture;
+  /** Faces of this die — the range the label scrambles through while it rolls. */
+  private faces = 0;
   private lift = 0;
   /** Everything this instance owns and must dispose (shared caches are never ours). */
   private readonly materials: MeshStandardMaterial[] = [];
@@ -106,6 +123,10 @@ export class Item implements OnDestroy {
     start: number;
     duration: number;
     hop: number;
+    /** Cycle random numbers on the label while this one runs (a die roll). */
+    scramble: boolean;
+    /** When the scrambled number was last redrawn. */
+    lastScramble: number;
   } | null = null;
   private frameId = 0;
   private appliedValue?: number;
@@ -125,8 +146,8 @@ export class Item implements OnDestroy {
       this.animateTo(this.state().rotation);
     });
     effect(() => {
-      const { value, variant, kind } = this.state();
-      if (value !== this.appliedValue) this.applyValue(value, variant, kind);
+      const { value, variant, kind, color } = this.state();
+      if (value !== this.appliedValue) this.applyValue(value, variant, kind, color);
     });
     effect(() => {
       const hovered = this.interactions.hoveredId() === this.state().id;
@@ -145,6 +166,7 @@ export class Item implements OnDestroy {
     for (const geometry of this.geometries) geometry.dispose();
     for (const texture of this.textures) texture.dispose();
     this.valueTexture?.dispose();
+    this.labelTexture?.dispose();
     if (this.label) (this.label.material as SpriteMaterial | undefined)?.dispose();
   }
 
@@ -166,13 +188,19 @@ export class Item implements OnDestroy {
 
     if (isDice(state.kind) && state.kind !== 'd6') {
       // A placeholder polyhedron has no readable faces, so the rolled number
-      // rides above it on a label instead (the d6 shows real pips).
-      this.label = new Sprite();
+      // rides above it on a label instead (the d6 shows real pips). The canvas
+      // is kept and repainted so a rolling die can cycle numbers cheaply.
+      this.faces = DIE_FACES[state.kind as DiceKind];
+      this.labelCanvas = makeValueCanvas();
+      this.labelTexture = new CanvasTexture(this.labelCanvas.canvas);
+      this.label = new Sprite(
+        new SpriteMaterial({ map: this.labelTexture, depthTest: false, transparent: true }),
+      );
       this.label.position.y = this.lift + 0.16;
       this.label.scale.setScalar(0.14);
       wrapper.add(this.label);
     }
-    this.applyValue(state.value, state.variant, state.kind);
+    this.applyValue(state.value, state.variant, state.kind, state.color);
 
     const anchor = state.attachedTo
       ? untracked(() => this.cards.card(state.attachedTo!)?.position)
@@ -189,6 +217,9 @@ export class Item implements OnDestroy {
       try {
         const model = (await this.assets.load(url)).clone();
         this.claimMaterials(model);
+        // An authored die still wears the player's chosen colour, so a green
+        // set is green whether or not a GLB happens to exist for that kind.
+        if (isDice(state.kind)) this.tintDice(state.color);
         this.normalizeModel(model, state.kind);
         return model;
       } catch (err) {
@@ -234,17 +265,22 @@ export class Item implements OnDestroy {
       return new Mesh(geometry, materials);
     }
     if (state.kind === 'counter') {
-      const geometry = makeCounterGeometry();
+      // A disc for ±1/±1, a squared tile for the x counter — the printed face
+      // sits on a different material slot on each (newmechanics.md "counter").
+      const geometry = makeCounterGeometry(state.variant);
       this.geometries.push(geometry);
       const face = this.own(new MeshStandardMaterial({ roughness: 0.6 }));
       const side = this.own(new MeshStandardMaterial({ color: 0x1b1b24, roughness: 0.8 }));
-      // side, top (the face carrying "+1/+1"), bottom.
-      return new Mesh(geometry, [side, face, side]);
+      const slot = counterFaceSlot(state.variant);
+      const materials = Array.from({ length: counterFaceCount(state.variant) }, (_, i) =>
+        i === slot ? face : side,
+      );
+      return new Mesh(geometry, materials);
     }
     const geometry = makeDiceGeometry(state.kind);
     this.geometries.push(geometry);
     if (state.kind === 'd6') {
-      const pips = makeD6PipTextures();
+      const pips = makeD6PipTextures(state.color);
       this.textures.push(...pips);
       return new Mesh(
         geometry,
@@ -253,8 +289,25 @@ export class Item implements OnDestroy {
     }
     return new Mesh(
       geometry,
-      this.own(new MeshStandardMaterial({ color: DICE_COLOR, roughness: 0.5, flatShading: true })),
+      this.own(
+        new MeshStandardMaterial({
+          color: dieColorHex(state.color),
+          roughness: 0.5,
+          flatShading: true,
+        }),
+      ),
     );
+  }
+
+  /**
+   * Paint a loaded die model in its colour. Only untextured materials are
+   * touched — a model that came with its own artwork keeps it rather than
+   * having the colour multiplied into every texel.
+   */
+  private tintDice(color: ItemState['color']): void {
+    for (const material of this.materials) {
+      if (!material.map) material.color.setHex(dieColorHex(color));
+    }
   }
 
   /** Track a material as ours (hover tints it, destroy disposes it). */
@@ -313,12 +366,16 @@ export class Item implements OnDestroy {
       this.body.rotation.z,
     ];
     this.target = [...rotation];
+    const coin = untracked(this.state).kind === 'coin';
     this.animation = {
       from,
       to: [...rotation],
       start: performance.now(),
-      duration: untracked(this.state).kind === 'coin' ? FLIP_MS : ROLL_MS,
-      hop: untracked(this.state).kind === 'coin' ? FLIP_HOP : 0,
+      duration: coin ? FLIP_MS : ROLL_MS,
+      hop: coin ? FLIP_HOP : 0,
+      // A rotation change on a labelled die is a roll: cycle its number.
+      scramble: !!this.label,
+      lastScramble: 0,
     };
     cancelAnimationFrame(this.frameId);
     this.frameId = requestAnimationFrame(this.tick);
@@ -337,22 +394,42 @@ export class Item implements OnDestroy {
     // A coin arcs up and back down over the same span.
     this.pivot.position.y = this.lift + animation.hop * Math.sin(Math.PI * t);
     if (t < 1) {
+      if (animation.scramble && now - animation.lastScramble >= SCRAMBLE_MS) {
+        animation.lastScramble = now;
+        this.drawLabel(1 + Math.floor(Math.random() * this.faces));
+      }
       this.frameId = requestAnimationFrame(this.tick);
       return;
     }
     this.animation = null;
     this.pivot.position.y = this.lift;
+    // Landed: the die "decides" — show the value that was rolled.
+    if (animation.scramble) this.drawLabel(untracked(this.state).value);
   };
+
+  /** Repaint the floating label with a number (the roll's result, or a
+   * scrambled one while it is still tumbling). */
+  private drawLabel(value: number): void {
+    if (!this.labelCanvas || !this.labelTexture) return;
+    this.labelCanvas.draw(value, untracked(this.state).color);
+    this.labelTexture.needsUpdate = true;
+  }
 
   /**
    * Repaint whatever shows the item's value: a counter's face, or the label
-   * floating over a polyhedral die. The previous drawing is disposed as it is
-   * replaced, so clicking a counter repeatedly never piles up textures.
+   * floating over a polyhedral die. A counter's drawing is disposed as it is
+   * replaced, so clicking one repeatedly never piles up textures; the die's
+   * label owns one canvas for its lifetime and simply re-uploads it.
    */
-  private applyValue(value: number, variant: ItemState['variant'], kind: ItemState['kind']): void {
+  private applyValue(
+    value: number,
+    variant: ItemState['variant'],
+    kind: ItemState['kind'],
+    color: ItemState['color'],
+  ): void {
     this.appliedValue = value;
     if (kind === 'counter') {
-      const material = this.counterFaceMaterial();
+      const material = this.counterFaceMaterial(variant);
       if (!material) return;
       this.valueTexture?.dispose();
       this.valueTexture = makeCounterTexture(value, variant);
@@ -360,21 +437,17 @@ export class Item implements OnDestroy {
       material.needsUpdate = true;
       return;
     }
-    if (!this.label) return;
-    this.valueTexture?.dispose();
-    this.valueTexture = makeValueTexture(value);
-    (this.label.material as SpriteMaterial | undefined)?.dispose();
-    this.label.material = new SpriteMaterial({
-      map: this.valueTexture,
-      depthTest: false,
-      transparent: true,
-    });
+    if (!this.labelCanvas || !this.labelTexture) return;
+    // A roll in flight owns the label until it lands (see `tick`).
+    if (this.animation?.scramble) return;
+    this.labelCanvas.draw(value, color);
+    this.labelTexture.needsUpdate = true;
   }
 
-  /** The counter's top-cap material (index 1 of the cylinder material list). */
-  private counterFaceMaterial(): MeshStandardMaterial | undefined {
+  /** The counter's printed face — the cylinder's top cap, or the box's +Y side. */
+  private counterFaceMaterial(variant: ItemState['variant']): MeshStandardMaterial | undefined {
     const mesh = this.body;
     if (!(mesh instanceof Mesh) || !Array.isArray(mesh.material)) return undefined;
-    return mesh.material[1] as MeshStandardMaterial | undefined;
+    return mesh.material[counterFaceSlot(variant)] as MeshStandardMaterial | undefined;
   }
 }

@@ -51,6 +51,7 @@
 .piles button,
 .zone-menu,
 .hand-menu,
+app-reveal-panel,
 .gate button,
 .opp button,
 .opp .mini,
@@ -566,6 +567,61 @@ button.mini {
 // opens at the cursor over the fanned cards.
 .zone-menu {
   transform: translateY(-100%);
+
+  .chevron {
+    color: #9c8cff;
+  }
+}
+
+// Deck menu ▸ Reveal: the 1-5 shortcuts, then a free "X" count.
+.reveal-counts {
+  display: flex;
+  gap: 4px;
+  padding: 0 6px 4px;
+
+  button {
+    flex: 1;
+    padding: 4px 0;
+    border-radius: 4px;
+    background: #35355a;
+    color: #ddd;
+    text-align: center;
+
+    &:hover {
+      background: #6c4cff;
+      color: #fff;
+    }
+  }
+}
+
+.reveal-x {
+  display: flex;
+  gap: 4px;
+  padding: 0 6px 4px;
+
+  input {
+    width: 3.5rem;
+    padding: 3px 6px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #1b1b24;
+    color: #fff;
+    font: inherit;
+  }
+
+  button {
+    flex: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: #35355a;
+    color: #ddd;
+    text-align: center;
+
+    &:hover {
+      background: #6c4cff;
+      color: #fff;
+    }
+  }
 }
 
 // ---------- zone examine dialog (projected into app-dialog, so styled here) ----------
