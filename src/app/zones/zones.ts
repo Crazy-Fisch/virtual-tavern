@@ -7,6 +7,7 @@ import { AssetLoaderService } from '../scene/asset-loader.service';
 import { CardDropTarget, CardInteractions, DRAG_Y } from '../scene/card/card-interactions';
 import { CardStore } from '../scene/card/card-store';
 import { newCardId } from '../scene/card/card.types';
+import { HotkeyList } from '../scene/card/hotkey-list/hotkey-list';
 import { Dialog } from '../shared/dialog/dialog';
 import { RevealPanel } from './reveal-panel/reveal-panel';
 import { REVEAL_COUNTS, RevealMode } from './reveal';
@@ -67,7 +68,7 @@ const ZONE_SELECTORS: Readonly<Record<ZoneKind, string>> = {
  */
 @Component({
   selector: 'app-zones',
-  imports: [Dialog, RevealPanel],
+  imports: [Dialog, RevealPanel, HotkeyList],
   templateUrl: './zones.html',
   styleUrl: './zones.scss',
   standalone: true,
@@ -99,6 +100,8 @@ export class Zones implements OnDestroy {
   protected readonly examining = signal<Examining | null>(null);
   /** Whether the "Choose Deck" picker dialog is open. */
   protected readonly choosingDeck = signal(false);
+  /** Whether the in-game hotkey reference is open (hotkeys.md). */
+  protected readonly showHotkeys = signal(false);
   /** Deck picked but not yet confirmed — nothing is loaded until it is. */
   protected readonly pendingDeck = signal<Deck | null>(null);
   /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
@@ -170,6 +173,18 @@ export class Zones implements OnDestroy {
 
   protected onResize(): void {
     this.viewport.set({ w: window.innerWidth, h: window.innerHeight });
+  }
+
+  /**
+   * Show the hotkey reference without leaving the table (hotkeys.md). Opening
+   * it drops whatever the cursor was last over: the dialog covers the canvas,
+   * so hover picking stops updating, and a player trying out the keys they are
+   * reading about must not act on a stale hover behind the panel.
+   */
+  protected openHotkeys(): void {
+    this.interactions.hoveredId.set(null);
+    this.interactions.hoveredHandCard.set(null);
+    this.showHotkeys.set(true);
   }
 
   /** Pick a deck: shown for confirmation, but nothing is loaded yet. */

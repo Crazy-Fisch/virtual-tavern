@@ -2,13 +2,14 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { RoomService } from '../room/room.service';
+import { HotkeyList } from '../scene/card/hotkey-list/hotkey-list';
 import { SupabaseService } from '../supabase/supabase.service';
 import { Dialog } from '../shared/dialog/dialog';
 
 /** Landing screen: sign in (email or guest), then create/join a room, plus settings. */
 @Component({
   selector: 'app-menu',
-  imports: [FormsModule, RouterLink, Dialog],
+  imports: [FormsModule, RouterLink, Dialog, HotkeyList],
   templateUrl: './menu.html',
   styleUrl: './menu.scss',
   standalone: true,
@@ -18,7 +19,7 @@ export class Menu {
   private readonly room = inject(RoomService);
   private readonly router = inject(Router);
 
-  protected readonly dialog = signal<'auth' | 'play' | 'settings' | null>(null);
+  protected readonly dialog = signal<'auth' | 'play' | 'settings' | 'hotkeys' | null>(null);
   /** Active tab of the auth dialog (login / sign up as tabs, guest below both). */
   protected readonly authTab = signal<'signin' | 'signup'>('signin');
   /** Active tab of the play dialog (join room / create room). */
@@ -69,6 +70,14 @@ export class Menu {
 
   protected openSettings(): void {
     this.dialog.set('settings');
+  }
+
+  /**
+   * The hotkey list replaces the settings dialog rather than stacking a second
+   * modal on it — one Esc, one backdrop, and a Back button to return.
+   */
+  protected openHotkeys(): void {
+    this.dialog.set('hotkeys');
   }
 
   protected closeDialog(): void {

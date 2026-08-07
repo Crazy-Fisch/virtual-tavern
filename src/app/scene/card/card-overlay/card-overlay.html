@@ -25,6 +25,9 @@
     <button type="button" (click)="act(m.card.id, 'related')">
       Related…{{ groupSuffix(m.group) }}
     </button>
+    <button type="button" (click)="act(m.card.id, 'duplicate')">
+      Duplicate{{ groupSuffix(m.group) }}
+    </button>
     <button type="button" (click)="act(m.card.id, 'toHand')">To hand</button>
     <button type="button" (click)="act(m.card.id, 'toDeck')">To deck (top)</button>
     <button type="button" (click)="act(m.card.id, 'toGrave')">To graveyard</button>

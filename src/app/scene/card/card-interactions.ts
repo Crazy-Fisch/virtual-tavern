@@ -8,6 +8,7 @@ import { ItemAction, ItemState, isItemId, itemLabel } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
 import { CardStore } from './card-store';
 import { CardAction, CardState, GROUP_ACTIONS, newCardId } from './card.types';
+import { HOTKEYS } from './hotkeys';
 
 /** Height a card floats at while being moved (tabletop is at y ≈ 0.2). */
 export const DRAG_Y = 0.5;
@@ -23,18 +24,8 @@ const DRAG_PLANE = new Plane(new Vector3(0, 1, 0), -DRAG_Y);
 /** Where added objects appear when no better spot is known (table center, tabletop ≈ 0.2). */
 const TABLE_CENTER: [number, number, number] = [0, 0.21, 0];
 
-/** Hotkeys firing card actions while a card is hovered (user-configurable later). */
-const HOTKEYS: Readonly<Record<string, CardAction>> = {
-  v: 'view',
-  t: 'tap',
-  r: 'rotate',
-  f: 'flip',
-  g: 'related',
-  h: 'toHand',
-  e: 'toExile',
-  x: 'delete',
-  Delete: 'delete',
-};
+/** How far a duplicate lands from its original, so the copy is plainly visible. */
+const DUPLICATE_OFFSET = 0.08;
 
 /** Screen anchor (CSS px relative to the scene host) for a card's popups. */
 export interface OverlayAnchor {
@@ -389,6 +380,10 @@ export class CardInteractions {
         if (anchor) this.relatedPanel.set({ ids, ...anchor });
         return;
       }
+      if (action === 'duplicate') {
+        this.duplicate(ids); // one batched write, like every other group commit
+        return;
+      }
       // Snapshot first: deleting mutates the store the selection points into.
       for (const id of ids) this.actOne(id, action);
       if (action === 'delete') this.clearSelection();
@@ -444,6 +439,9 @@ export class CardInteractions {
         if (anchor) this.relatedPanel.set({ ids: [cardId], ...anchor });
         break;
       }
+      case 'duplicate':
+        this.duplicate([cardId]);
+        break;
       case 'toHand':
         this.toZone(card, 'hand');
         break;
@@ -462,6 +460,39 @@ export class CardInteractions {
         this.room.sendAction(`removed ${card.name}`);
         break;
     }
+  }
+
+  /**
+   * Put a copy of each card on the table (hotkeys.md): same face, pose and
+   * related cards, nudged clear of the original and a hair above it so the two
+   * don't z-fight. Every copy takes the same nudge, so duplicating a selection
+   * reproduces its layout, and the whole lot lands in one write like every
+   * other group commit here.
+   *
+   * A copy is *mine* whoever owned the original — I am the one who put it
+   * there, and that is what "untap all" keys off. Counters attached to the
+   * original stay on the original; a copy of a card is a card.
+   */
+  private duplicate(ids: readonly string[]): void {
+    const copies: CardState[] = [];
+    const names: string[] = [];
+    for (const id of ids) {
+      const card = this.store.card(id);
+      if (!card) continue;
+      const [x, y, z] = card.position;
+      copies.push({
+        ...card,
+        id: newCardId(),
+        position: [x + DUPLICATE_OFFSET, y + PLACE_OFFSET, z + DUPLICATE_OFFSET],
+        ownerUid: this.room.userId() ?? '',
+      });
+      names.push(card.name);
+    }
+    if (copies.length === 0) return;
+    this.store.addMany(copies);
+    this.room.sendAction(
+      names.length === 1 ? `duplicated ${names[0]}` : `duplicated ${names.length} cards`,
+    );
   }
 
   /** Move a card off the table into a zone, taking its counters with it. */

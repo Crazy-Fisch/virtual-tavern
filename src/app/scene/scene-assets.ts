@@ -12,13 +12,55 @@
  *   CAMERA_POS in scene.ts), so author the table centered on the origin.
  */
 
+/**
+ * A PBR texture set that replaces a model's authored material (see
+ * `environment-material.ts`). Paths are under public/, like the models.
+ *
+ * All maps are optional but `baseColor`; a missing one simply isn't requested.
+ * There is deliberately no displacement/height entry — displacement is a
+ * per-vertex offset, and these environment models are low-poly boxes with
+ * nothing to displace, so the relief has to come from `normal` (which encodes
+ * the same detail) instead.
+ */
+export interface PbrTextureSet {
+  readonly baseColor: string;
+  readonly normal?: string;
+  readonly roughness?: string;
+  readonly ao?: string;
+  /**
+   * How much of the model, in metres, one tile of the texture should cover. The
+   * repeat is derived from this and the model's own UV scale, so it stays right
+   * if the model is re-authored or re-unwrapped.
+   */
+  readonly tileMetres: number;
+}
+
+const PLANK_FLOOR = 'textures/PlankFloor/Substance_Graph_';
+
+/**
+ * Substance's parquet wood, used for the tabletop (textures.md). One tile is
+ * ~8 blocks across, so a 1.2 m tile puts a block at ~15 cm — fine parquetry
+ * next to a 0.48 m card, and detailed enough to read under the fixed camera.
+ */
+const PLANK_WOOD: PbrTextureSet = {
+  baseColor: `${PLANK_FLOOR}BaseColor.jpg`,
+  normal: `${PLANK_FLOOR}Normal.jpg`,
+  roughness: `${PLANK_FLOOR}Roughness.jpg`,
+  ao: `${PLANK_FLOOR}AmbientOcclusion.jpg`,
+  tileMetres: 1.2,
+};
+
 export interface EnvironmentAsset {
   /** Path under public/, served from the site root. */
   readonly url: string;
+  /** Replaces every material in the GLB once its maps have loaded. */
+  readonly material?: PbrTextureSet;
 }
 
 /** Static environment models. Missing files fall back to the procedural floor. */
-export const ENVIRONMENT_ASSETS: readonly EnvironmentAsset[] = [{ url: 'models/Table01.glb' }];
+export const ENVIRONMENT_ASSETS: readonly EnvironmentAsset[] = [
+  { url: 'models/Table01.glb', material: PLANK_WOOD },
+];
 
 /**
  * The card model is NOT a static environment asset — it is instanced per card by

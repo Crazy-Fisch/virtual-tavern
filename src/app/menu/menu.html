@@ -225,7 +225,16 @@
         <input type="checkbox" [(ngModel)]="showNameTags" name="showNameTags" />
         Show name tags
       </label>
+      <!-- Read-only overview of the in-game controls (hotkeys.md). -->
+      <button class="btn" type="button" (click)="openHotkeys()">Hotkeys…</button>
       <button class="primary" type="submit">Done</button>
     </form>
+  </app-dialog>
+}
+
+@if (dialog() === 'hotkeys') {
+  <app-dialog heading="Hotkeys" (close)="closeDialog()">
+    <app-hotkey-list />
+    <button class="btn hk-back" type="button" (click)="openSettings()">← Settings</button>
   </app-dialog>
 }

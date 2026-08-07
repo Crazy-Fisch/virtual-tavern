@@ -78,6 +78,30 @@ describe('CardInteractions', () => {
     expect(interactions.contextMenu()).toBeNull();
   });
 
+  it('duplicate puts a copy on the table, clear of the original and stamped as mine', () => {
+    store.update(cardId, { tapped: true, yaw: Math.PI, faceUp: false, ownerUid: 'user-2' });
+    room.actions.length = 0;
+
+    interactions.act(cardId, 'duplicate');
+    const cards = store.cards();
+    expect(cards).toHaveLength(2);
+    const copy = cards.find((c) => c.id !== cardId)!;
+    // Same card, same pose — but its own id, nudged clear, and owned by me.
+    expect(copy).toMatchObject({ name: 'Water Worm', tapped: true, faceUp: false });
+    expect(copy.yaw).toBeCloseTo(Math.PI);
+    expect(copy.ownerUid).toBe('user-1');
+    expect(copy.position[0]).toBeGreaterThan(0);
+    expect(copy.position[1]).toBeGreaterThan(0.5); // above it, so they can't z-fight
+    expect(copy.position[2]).toBeGreaterThan(0);
+    expect(room.actions).toEqual(['duplicated Water Worm']);
+  });
+
+  it('the D hotkey duplicates the hovered card', () => {
+    interactions.hoveredId.set(cardId);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+    expect(store.cards()).toHaveLength(2);
+  });
+
   it('delete removes the card from the shared state and logs it', () => {
     interactions.act(cardId, 'delete');
     expect(store.card(cardId)).toBeUndefined();
@@ -542,6 +566,23 @@ describe('CardInteractions', () => {
         expect(store.card(cardId)).toBeUndefined();
         expect(store.card(second)).toBeUndefined();
         expect(interactions.selectedIds().size).toBe(0);
+      });
+
+      it('duplicating through a selection copies every card in ONE write, keeping the layout', () => {
+        const second = addSecondCard(); // sits +1 in x from the first
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        room.batches.length = 0;
+        room.actions.length = 0;
+
+        interactions.act(cardId, 'duplicate');
+        const copies = store.cards().filter((c) => c.id !== cardId && c.id !== second);
+        expect(copies).toHaveLength(2);
+        // Every copy took the same nudge, so the pair keeps its spacing.
+        const spread = copies.map((c) => c.position[0]).sort((a, b) => a - b);
+        expect(spread[1]! - spread[0]!).toBeCloseTo(1, 5);
+        expect(room.batches).toHaveLength(1); // atomic, like every group commit
+        expect(room.actions).toEqual(['duplicated 2 cards']);
+        expect(interactions.selectedIds().size).toBe(2); // originals stay selected
       });
 
       it('the related panel of a selection lists every selected card as an owner', () => {

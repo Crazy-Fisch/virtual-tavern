@@ -1,0 +1,15 @@
+@for (group of guide; track group.title) {
+  <section class="hk-group">
+    <h4>{{ group.title }}</h4>
+    <dl>
+      @for (entry of group.entries; track entry.keys) {
+        <div class="hk-row">
+          <dt>
+            <kbd>{{ entry.keys }}</kbd>
+          </dt>
+          <dd>{{ entry.description }}</dd>
+        </div>
+      }
+    </dl>
+  </section>
+}

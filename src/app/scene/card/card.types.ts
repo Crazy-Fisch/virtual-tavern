@@ -44,6 +44,7 @@ export type CardAction =
   | 'rotate'
   | 'flip'
   | 'related'
+  | 'duplicate'
   | 'toHand'
   | 'toDeck'
   | 'toGrave'
@@ -55,4 +56,4 @@ export type CardAction =
  * (cardselection.md). Everything else drops the selection and acts on the one
  * card that was clicked.
  */
-export const GROUP_ACTIONS: readonly CardAction[] = ['tap', 'related', 'delete'];
+export const GROUP_ACTIONS: readonly CardAction[] = ['tap', 'related', 'duplicate', 'delete'];

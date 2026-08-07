@@ -113,6 +113,21 @@ interactive objects, use the `RoomService.worldState()`/`setWorldObject()` patte
 string id per object, last-writer-wins in Postgres). Remember to `dispose()` geometry and
 materials when removing meshes you own.
 
+**Lighting** (`textures.md`) is a warm tavern interior, set up in `Scene.ngAfterViewInit`: a
+near-white warm `HemisphereLight` plus a weak overhead `DirectionalLight` fill, and two
+fire-coloured `PointLight` "torches" at x = ±4.8 — offscreen either side of the ~7.5 m-wide
+orthographic frame — whose inverse-square falloff makes the near table edges ~12% hotter than
+the middle. They flicker (±8%, two out-of-phase sines) from the render loop. Two constraints
+bound the constants and are worth respecting when touching them. Only the torches are
+saturated: three shades diffuse as `albedo / π × irradiance`, and the plank texture is already
+a deep brown, so a saturated ambient crushes what green and blue it has left and the table
+goes flat orange. And total irradiance sits at ~π — the point where a surface renders as its
+own base colour — because the renderer runs with **no tone mapping** (so card art, drawn
+emissive at full strength, matches the same image in the DOM), which means bright lit surfaces
+clip rather than roll off. `TORCH_INTENSITY` is the value with the ceiling. The intensities
+were derived by reproducing that shading math against the textures' measured average colours,
+not by eye — re-check the same way rather than nudging blind.
+
 Card interactions (see `designdocs/cardinteractions.md` and
 `designdocs/featurerequests.md`) are **networked**: `CardStore`
 (`src/app/scene/card/card-store.ts`, types in `card.types.ts`) is a computed projection over
@@ -139,8 +154,8 @@ instead; a
 drop that hits nothing snaps the card back; Escape cancels; a plain click taps/untaps a card —
 a networked quarter turn via the `tapped` field on CardState), posts action-history lines, and
 owns the popup state rendered by
-`CardOverlay` (context menus for cards — view/tap/rotate/flip/related/to-hand/to-deck/
-to-graveyard/to-exile/delete, and the item menu) plus the **util window**
+`CardOverlay` (context menus for cards — view/tap/rotate/flip/related/duplicate/to-hand/
+to-deck/to-graveyard/to-exile/delete, and the item menu) plus the **util window**
 (`src/app/scene/util-window/`), opened by right-clicking empty table: the game items
 (dice/coin/counters, see below) above a debounced card search
 via `CardSearchService` (`card-search.service.ts` — fetches `{base}/cards/search` on the
@@ -153,10 +168,18 @@ gone). **Related cards** work the same way: `CardState.relatedNames` carries the
 the card data's `all_parts` (populated by search hits and, for deck cards, by
 `CardDatabaseService.lookup`), the panel resolves them to images via the card database, and
 each entry is draggable onto the table (click = view large). Hotkeys on the hovered card
-live in the `HOTKEYS` record; **U** is global — `untapAll()` untaps every tapped card whose
+live in the `HOTKEYS` record — which, with the labels and the read-only overview built from
+it, lives in **`src/app/scene/card/hotkeys.ts`** (`designdocs/hotkeys.md`; keep that file free
+of Three imports — the `HotkeyList` component beside it renders `HOTKEY_GUIDE`, and it is
+shown both on the menu screen, behind Settings ▸ Hotkeys, and in-game from the Zones
+overlay's "Hotkeys" button, which clears the hover first so trying out a key doesn't act on
+a card behind the dialog). **D** duplicates: a copy of the
+card, same pose, nudged clear and stamped with _my_ uid, and it is a `GROUP_ACTION`, so a
+selection duplicates as one batched write keeping its layout.
+**U** is global — `untapAll()` untaps every tapped card whose
 `CardState.ownerUid` (stamped on every card put onto the table) is mine, in one batched
 write, and the Zones overlay offers the same as an "Untap all" button next to the life
-counter. **V** also works over a card in the **hand** (`designdocs/finaltouches.md`): hover
+counter, alongside a **Hotkeys** button. **V** also works over a card in the **hand** (`designdocs/finaltouches.md`): hover
 picking is a raycast and can't see DOM cards, so Zones publishes the one under the cursor into
 `hoveredHandCard`, and the key opens `viewImage` — the shared "view a card with no table
 instance" popup that the related panel uses too. `CardInteractions.beginDragFromHand(id, event, hooks)` lets a card played from the
@@ -322,6 +345,22 @@ normalised on load to the placeholder's size and centred on its bounding box
 (`Item.normalizeModel`), so authored scale/origin don't matter, and untextured full-metal
 default materials are made matte so they don't render black.
 
+An environment asset may also carry a **`PbrTextureSet`** (`textures.md`): base colour + any
+of normal/roughness/AO under `public/textures/`, plus a **`tileMetres`**. After the GLB loads,
+`applyTextureSet` (`src/app/scene/environment-material.ts`) replaces _every_ material in it
+with one `MeshStandardMaterial` built from those maps — the table wears
+`textures/PlankFloor/` this way. It is not awaited: the model is on the table wearing its
+authored material while the maps download. Two things to know. The **repeat is measured, not
+guessed**: a Blender unwrap packs the faces into an atlas, so 0..1 UV is the whole model and
+the tiling has to come from the ratio of UV area to world area over every triangle ("UV units
+per metre"), which is what makes `tileMetres` mean metres. And it runs **once per model**
+(`WeakMap`), because `AssetLoaderService` hands the same cached `Group` to every scene mount.
+There is deliberately no height/displacement entry — displacement is per-vertex and these are
+low-poly boxes, so the relief comes from the normal map. `AssetLoaderService.loadTexture`
+takes a **`TextureKind`** for this: `'color'` (sRGB, the default, card art and base colour)
+or `'data'` (linear — a gamma-decoded normal/roughness/AO map is simply wrong); the cache key
+includes it.
+
 `loadTexture` (card art, from the deposited card API) tries an `<img>` first and falls back to fetching the
 bytes in CORS mode and building the texture from an `ImageBitmap`. That fallback exists
 because the same art is also shown in the DOM: an `<img>` **without** `crossorigin` can leave
@@ -360,7 +399,9 @@ with a constructor call only because its spawn `await`s the model load before to
   Only guests type a per-room display name (shown on both tabs); registered players always
   play under their username. Also Decks
   (`routerLink="/decks"`, shown for anyone signed in — guests included), Settings (sample,
-  not-yet-persisted), and Sign out.
+  not-yet-persisted, plus a **Hotkeys** button opening the read-only controls overview —
+  it replaces the settings dialog rather than stacking a second modal, with a Back button),
+  and Sign out.
 - `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — only fully signed-out
   visitors are redirected to `/`): deck screen — import a pasted decklist, deck-square overview
   (left-click to open the full-page deck view, right-click to rename/delete), card database

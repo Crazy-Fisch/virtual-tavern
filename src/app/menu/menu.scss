@@ -114,6 +114,13 @@ button,
   }
 }
 
+// The list itself is `app-hotkey-list` (it brings its own styles); this is just
+// the Back button under it in Settings ▸ Hotkeys.
+.hk-back {
+  margin-top: 1rem;
+  width: 100%;
+}
+
 // Dialog form contents
 .form {
   display: flex;

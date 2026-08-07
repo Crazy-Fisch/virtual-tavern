@@ -69,6 +69,12 @@ export class CardStore {
     this.room.setWorldObject(card.id, toData(card));
   }
 
+  /** Add several cards in one shared write — duplicating a whole selection. */
+  addMany(cards: readonly CardState[]): void {
+    if (cards.length === 0) return;
+    this.room.setWorldObjects(cards.map((card) => [card.id, toData(card)] as const));
+  }
+
   /**
    * Add a card only this client sees — a card leaving the hand under the
    * cursor. Nothing reaches the network until `update()` commits it (the drop

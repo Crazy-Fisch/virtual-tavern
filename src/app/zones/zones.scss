@@ -446,7 +446,8 @@ button.mini {
 }
 
 .reveal-toggle,
-.untap-all {
+.untap-all,
+.hotkeys-btn {
   @extend %panel;
   @extend %pill;
   padding: calc(0.35 * var(--u)) calc(0.8 * var(--u));

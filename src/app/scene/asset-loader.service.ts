@@ -1,10 +1,27 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { Group, Material, Mesh, Object3D, SRGBColorSpace, Texture, TextureLoader } from 'three';
+import {
+  Group,
+  Material,
+  Mesh,
+  NoColorSpace,
+  Object3D,
+  SRGBColorSpace,
+  Texture,
+  TextureLoader,
+} from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-/** Card art conventions: sRGB, and glTF-authored UVs (image kept top-down). */
-function configureCardTexture(texture: Texture): Texture {
-  texture.colorSpace = SRGBColorSpace;
+/**
+ * What a texture's channels mean. `'color'` is art (card faces, base-colour
+ * maps) and is decoded from sRGB; `'data'` is a PBR map whose numbers must reach
+ * the shader untouched — a gamma-decoded normal, roughness or AO map is simply
+ * wrong.
+ */
+export type TextureKind = 'color' | 'data';
+
+/** Shared conventions: colour space per kind, glTF-authored UVs (top-down image). */
+function configureTexture(texture: Texture, kind: TextureKind): Texture {
+  texture.colorSpace = kind === 'color' ? SRGBColorSpace : NoColorSpace;
   texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
@@ -51,18 +68,21 @@ export class AssetLoaderService {
   }
 
   /**
-   * Cached image texture, configured for use on glTF-authored UVs (sRGB,
-   * flipY = false). Shared across consumers — never dispose it. Does not drive
-   * the loading/progress signals (textures pop in; the overlay is for models).
+   * Cached image texture, configured for use on glTF-authored UVs (flipY =
+   * false, colour space per `kind`). Shared across consumers — never dispose it.
+   * Does not drive the loading/progress signals (textures pop in; the overlay is
+   * for models). The cache key includes the kind, so the same image can serve as
+   * both art and a data map without one stomping the other's colour space.
    */
-  loadTexture(url: string): Promise<Texture> {
-    const cached = this.textureCache.get(url);
+  loadTexture(url: string, kind: TextureKind = 'color'): Promise<Texture> {
+    const key = `${kind}:${url}`;
+    const cached = this.textureCache.get(key);
     if (cached) return cached;
-    const promise = this.loadTextureFresh(url).catch((err: unknown) => {
-      this.textureCache.delete(url); // allow retry
+    const promise = this.loadTextureFresh(url, kind).catch((err: unknown) => {
+      this.textureCache.delete(key); // allow retry
       throw err instanceof Error ? err : new Error(`Failed to load texture ${url}`);
     });
-    this.textureCache.set(url, promise);
+    this.textureCache.set(key, promise);
     return promise;
   }
 
@@ -78,15 +98,15 @@ export class AssetLoaderService {
    * `crossorigin="anonymous"` so both paths share one CORS-clean entry; this
    * re-fetch heals whatever slipped through (or was cached before the fix).
    */
-  private async loadTextureFresh(url: string): Promise<Texture> {
+  private async loadTextureFresh(url: string, kind: TextureKind): Promise<Texture> {
     try {
-      return await this.loadTextureViaImage(url);
+      return await this.loadTextureViaImage(url, kind);
     } catch {
-      return await this.loadTextureFromBytes(url);
+      return await this.loadTextureFromBytes(url, kind);
     }
   }
 
-  private loadTextureViaImage(url: string): Promise<Texture> {
+  private loadTextureViaImage(url: string, kind: TextureKind): Promise<Texture> {
     return new Promise<Texture>((resolve, reject) => {
       this.textureLoader ??= new TextureLoader();
       // Explicit (and matching the <img crossorigin="anonymous">) so the
@@ -94,7 +114,7 @@ export class AssetLoaderService {
       this.textureLoader.setCrossOrigin('anonymous');
       this.textureLoader.load(
         url,
-        (texture) => resolve(configureCardTexture(texture)),
+        (texture) => resolve(configureTexture(texture, kind)),
         undefined,
         (err) => reject(err instanceof Error ? err : new Error(`Failed to load texture ${url}`)),
       );
@@ -102,14 +122,14 @@ export class AssetLoaderService {
   }
 
   /** CORS re-fetch: build the texture from the bytes, skipping the HTTP cache. */
-  private async loadTextureFromBytes(url: string): Promise<Texture> {
+  private async loadTextureFromBytes(url: string, kind: TextureKind): Promise<Texture> {
     const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'reload' });
     if (!response.ok) throw new Error(`Failed to load texture ${url} (${response.status})`);
     const blob = await response.blob();
     // ImageBitmap ignores Texture.flipY, but its default orientation already
     // matches flipY = false (top-left origin), which is what glTF UVs expect.
     const bitmap = await createImageBitmap(blob);
-    return configureCardTexture(new Texture(bitmap));
+    return configureTexture(new Texture(bitmap), kind);
   }
 
   /** Dispose geometries, materials, and their textures. NOT for cached environment Groups. */
