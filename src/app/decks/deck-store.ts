@@ -1,6 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
-import { Deck, DeckEntry } from './deck.types';
+import { BuiltInDecks } from './built-in-decks';
+import { Deck, DeckEntry, isBuiltInDeck } from './deck.types';
 import { parseDecklist } from './decklist-parser';
 
 /** Per-browser localStorage key holding a guest's decks (also the legacy key). */
@@ -34,13 +35,25 @@ function cleanName(name: string): string {
  * that account once (`syncLocalToAccount`), so a guest who registers keeps what
  * they built. The Decks page creates, renames, and deletes decks here, and the
  * in-room deck chooser reads them when a player sits down at the table.
+ *
+ * On top of the player's own decks sit the **built-in** ones shipped with the
+ * app (`BuiltInDecks`, `designdocs/defaultdecks.md`). They are merged in at read
+ * time rather than copied into anyone's storage, so a decklist added to
+ * `public/decks/` later reaches existing users too — and they are read-only
+ * here: rename and remove ignore them, since there is nothing of theirs to
+ * write.
  */
 @Injectable({ providedIn: 'root' })
 export class DeckStore {
   private readonly supabase = inject(SupabaseService);
+  private readonly builtIn = inject(BuiltInDecks);
 
+  /** The player's own decks — what localStorage / the `decks` table holds. */
   private readonly _decks = signal<Deck[]>([]);
-  readonly decks = this._decks.asReadonly();
+  readonly ownDecks = this._decks.asReadonly();
+
+  /** Everything the player can pick from: the shipped decks, then their own. */
+  readonly decks = computed<Deck[]>(() => [...this.builtIn.decks(), ...this._decks()]);
 
   /** Whether this session can keep decks at all — anyone signed in (guest or account). */
   readonly available = computed(() => !!this.supabase.userId());
@@ -79,14 +92,12 @@ export class DeckStore {
     // Optimistic append, rolled back if the account insert fails.
     this._decks.update((decks) => [...decks, deck]);
     if (this.onAccount()) {
-      const { error } = await this.supabase.client
-        .from('decks')
-        .insert({
-          id: deck.id,
-          owner_id: this.supabase.userId(),
-          name: deck.name,
-          list: deck.list,
-        });
+      const { error } = await this.supabase.client.from('decks').insert({
+        id: deck.id,
+        owner_id: this.supabase.userId(),
+        name: deck.name,
+        list: deck.list,
+      });
       if (error) {
         this._decks.update((decks) => decks.filter((d) => d.id !== deck.id));
         return error.message;
@@ -97,8 +108,10 @@ export class DeckStore {
     return null;
   }
 
-  /** Rename a deck, persisting to whichever store backs this session. */
+  /** Rename a deck, persisting to whichever store backs this session. A deck
+   * shipped with the app has no writable copy, so it cannot be renamed. */
   rename(id: string, name: string): void {
+    if (isBuiltInDeck(id)) return;
     const clean = cleanName(name);
     this._decks.update((decks) => decks.map((d) => (d.id === id ? { ...d, name: clean } : d)));
     if (this.onAccount())
@@ -106,7 +119,9 @@ export class DeckStore {
     else this.persistLocal();
   }
 
+  /** Delete one of the player's own decks; built-in decks always stay. */
   remove(id: string): void {
+    if (isBuiltInDeck(id)) return;
     this._decks.update((decks) => decks.filter((d) => d.id !== id));
     if (this.onAccount()) void this.supabase.client.from('decks').delete().eq('id', id);
     else this.persistLocal();

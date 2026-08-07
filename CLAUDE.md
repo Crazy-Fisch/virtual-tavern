@@ -10,6 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm test` — run unit tests with Vitest (via `@angular/build:unit-test`)
 - Run a single test file: `npx ng test --include src/app/path/to/file.spec.ts`
 - `npx ng generate component <name>` — scaffold (styles default to SCSS, selector prefix `app`)
+- `npm run decks:manifest` — re-list `public/decks/*.txt` into `public/decks/index.json`. Runs
+  automatically from the `prestart` / `prebuild` / `prebuild:pages` / `prewatch` hooks; you only
+  need it by hand after adding a decklist without restarting.
 
 There is no lint script. Formatting is Prettier (`.prettierrc`).
 
@@ -245,11 +248,24 @@ that. A session-following `effect` picks the store: a guest reads local decks, a
 its cloud decks and **`syncLocalToAccount`** uploads any local guest decks into the account
 once (so a guest who registers keeps what they built), then clears local. `Deck` = id + name +
 `{card, count}` list; phase 1 import-only via `parseDecklist` (Arena/Moxfield/Archidekt/MTGO/
-plain); import/rename/remove are optimistic with rollback. The Decks screen (`decks.ts`) shows
+plain); import/rename/remove are optimistic with rollback. `decks()` is the player's own decks
+with the **shipped** ones in front (see below); `ownDecks()` is the writable half, and it is
+what localStorage/the `decks` table hold. The Decks screen (`decks.ts`) shows
 each deck as a square backed by a cutout of its first card's art (right-click → rename/delete),
 and left-clicking a deck opens a full-page **deck view** — a scrollable grid of every card,
 images resolved via the card database (white placeholder while loading, pink for an unknown
 name); "← Back" returns to the overview.
+**Default decks** (`designdocs/defaultdecks.md`) are plain decklist `.txt` files in
+`public/decks/`. Static hosting has no directory listing, so
+`scripts/generate-deck-manifest.mjs` writes `public/decks/index.json` from that folder (wired
+to the `pre*` npm scripts, and committed so a bare `ng build` still ships them); `BuiltInDecks`
+(root, `built-in-decks.ts`) fetches the index and each file, parses them with the same
+`parseDecklist`, and names each deck after its file (`black_demons.txt` → "Black Demons").
+`DeckStore` merges them in at **read** time instead of copying them into anyone's storage —
+that is what makes a decklist added later show up for existing users — and they are read-only
+(`isBuiltInDeck`, id `builtin:<file>`; rename/remove ignore them). A missing manifest, file or
+unparseable list costs that deck and nothing else, like the missing-GLB fallback. Adding a deck
+is therefore: drop the `.txt` in, rebuild.
 **The card API is user-deposited** (`designdocs/legal.md`): the app ships **no** card-data
 endpoint of its own. `CardApiService` (root, `src/app/carddb/card-api.service.ts`) holds the
 base URL of the Scryfall-_compatible_ API the user has provided — registered users keep it in

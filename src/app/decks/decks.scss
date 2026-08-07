@@ -215,6 +215,24 @@
     font-size: 0.85rem;
     color: #cbbcff;
   }
+
+  // A deck that ships with the app (defaultdecks.md) — playable, not editable.
+  &.built-in {
+    border-color: #4a4160;
+  }
+
+  .deck-badge {
+    position: relative;
+    align-self: flex-start;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.3rem;
+    background: rgba(108, 76, 255, 0.85);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
 }
 
 // ---------- full-page deck view ----------
@@ -421,5 +439,14 @@
     &.rename {
       color: #eee;
     }
+  }
+
+  // Shown instead of the actions for a deck that ships with the app.
+  .menu-note {
+    margin: 0;
+    padding: 7px 10px;
+    max-width: 180px;
+    color: #999;
+    font-size: 0.8rem;
   }
 }

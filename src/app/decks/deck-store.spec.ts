@@ -1,7 +1,10 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { SupabaseService } from '../supabase/supabase.service';
+import { BuiltInDecks } from './built-in-decks';
 import { DeckStore } from './deck-store';
+import { Deck } from './deck.types';
 
 const LOCAL_DECKS_KEY = 'virtual-tavern.decks';
 
@@ -26,7 +29,15 @@ function makeQuery(result: QueryResult, calls: Call[]): unknown {
   return proxy;
 }
 
-function setup(opts: { guest?: boolean; signedOut?: boolean; results?: QueryResult[] } = {}) {
+function setup(
+  opts: {
+    guest?: boolean;
+    signedOut?: boolean;
+    results?: QueryResult[];
+    /** Decks the app ships with, normally fetched from public/decks. */
+    builtIn?: Deck[];
+  } = {},
+) {
   const results = opts.results ?? [];
   const calls: Call[] = [];
   const client = {
@@ -41,7 +52,14 @@ function setup(opts: { guest?: boolean; signedOut?: boolean; results?: QueryResu
     isGuest: () => opts.guest ?? false,
   };
   TestBed.configureTestingModule({
-    providers: [{ provide: SupabaseService, useValue: supabase }],
+    providers: [
+      { provide: SupabaseService, useValue: supabase },
+      // Stubbed at the service seam: the real one fetches over the network.
+      {
+        provide: BuiltInDecks,
+        useValue: { decks: signal(opts.builtIn ?? []), loaded: signal(true) },
+      },
+    ],
   });
   const store = TestBed.inject(DeckStore);
   TestBed.tick(); // run the session-follow effect (kicks off the initial load)
@@ -171,6 +189,40 @@ describe('DeckStore', () => {
     store.remove('d1');
     expect(store.decks()).toEqual([]);
     expect(calls.find((c) => c.method === 'delete')).toBeDefined();
+  });
+
+  it('every user gets the shipped decks, listed before their own', async () => {
+    const shipped: Deck = {
+      id: 'builtin:red_dragons.txt',
+      name: 'Red Dragons',
+      list: [{ card: 'Mountain', count: 22 }],
+    };
+    const { store } = setup({ guest: true, builtIn: [shipped] });
+    await flush();
+    expect(store.decks()).toEqual([shipped]);
+
+    await store.import('Mine', '1 Island');
+    expect(store.decks().map((d) => d.name)).toEqual(['Red Dragons', 'Mine']);
+    // Shipped decks are read at load time, never copied into the player's store.
+    expect(store.ownDecks().map((d) => d.name)).toEqual(['Mine']);
+    expect(readLocal()).toHaveLength(1);
+  });
+
+  it('a shipped deck cannot be renamed or deleted', async () => {
+    const shipped: Deck = {
+      id: 'builtin:burn.txt',
+      name: 'Burn',
+      list: [{ card: 'Shock', count: 4 }],
+    };
+    const { store, calls } = setup({ builtIn: [shipped] });
+    await flush();
+    calls.length = 0;
+
+    store.rename('builtin:burn.txt', 'Not Burn');
+    store.remove('builtin:burn.txt');
+    expect(store.decks()).toEqual([shipped]);
+    expect(calls).toEqual([]); // and nothing was written anywhere
+    expect(readLocal()).toEqual([]);
   });
 
   it('uploads a guest’s local decks into a new account on sign-in, then clears local', async () => {

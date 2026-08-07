@@ -4,7 +4,7 @@ import { CardApiService } from '../carddb/card-api.service';
 import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
 import { Dialog } from '../shared/dialog/dialog';
 import { DeckStore } from './deck-store';
-import { Deck, deckSize } from './deck.types';
+import { Deck, deckSize, isBuiltInDeck } from './deck.types';
 
 /** Screen anchor (relative to the page) of the right-click menu on a deck tile. */
 type DeckMenu = { deck: Deck; x: number; y: number };
@@ -31,6 +31,8 @@ export class Decks {
   protected readonly db = inject(CardDatabaseService);
   protected readonly api = inject(CardApiService);
   protected readonly deckSize = deckSize;
+  /** Decks shipped with the app can't be renamed or deleted (defaultdecks.md). */
+  protected readonly isBuiltIn = isBuiltInDeck;
 
   protected readonly name = signal('');
   protected readonly list = signal('');

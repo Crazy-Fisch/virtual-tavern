@@ -7,7 +7,12 @@
     }
     <h1>{{ viewing()?.name || 'Decks' }}</h1>
     <span class="db-status">{{ dbLabel() }}</span>
-    <button type="button" class="api-btn" [class.attention]="!api.configured()" (click)="openApiDialog()">
+    <button
+      type="button"
+      class="api-btn"
+      [class.attention]="!api.configured()"
+      (click)="openApiDialog()"
+    >
       {{ api.configured() ? 'Change card API' : 'Add card API' }}
     </button>
   </header>
@@ -67,15 +72,21 @@
         <h2>Your decks</h2>
         <div class="grid">
           @for (d of store.decks(); track d.id) {
+            <!-- Decks shipped with the app sit alongside the player's own and
+                 wear a small badge; they can be played but not edited. -->
             <button
               type="button"
               class="deck-tile"
+              [class.built-in]="isBuiltIn(d.id)"
               [title]="d.name + ' — click to view, right-click for options'"
               (click)="openView(d)"
               (contextmenu)="openMenu($event, d)"
             >
               @if (firstCardSrc(d); as bg) {
                 <img class="deck-bg" [src]="bg" alt="" crossorigin="anonymous" draggable="false" />
+              }
+              @if (isBuiltIn(d.id)) {
+                <span class="deck-badge" title="Ships with VirtualTavern">included</span>
               }
               <span class="deck-name">{{ d.name }}</span>
               <span class="deck-count">{{ deckSize(d) }}</span>
@@ -90,8 +101,12 @@
 
   @if (menu(); as m) {
     <div class="deck-menu" [style.left.px]="m.x" [style.top.px]="m.y">
-      <button type="button" class="rename" (click)="startRename()">Rename deck</button>
-      <button type="button" (click)="deleteDeck()">Delete deck</button>
+      @if (isBuiltIn(m.deck.id)) {
+        <p class="menu-note">Included with the app — it can’t be renamed or deleted.</p>
+      } @else {
+        <button type="button" class="rename" (click)="startRename()">Rename deck</button>
+        <button type="button" (click)="deleteDeck()">Delete deck</button>
+      }
     </div>
   }
 </div>
@@ -115,8 +130,8 @@
   <app-dialog heading="Card API" (close)="apiDraft.set(null)">
     <form class="api-form" (submit)="$event.preventDefault(); saveApi()">
       <p class="api-hint">
-        VirtualTavern ships without a card data API of its own. Deposit the base URL of a
-        card data API to enable card search and card images.
+        VirtualTavern ships without a card data API of its own. Deposit the base URL of a card data
+        API to enable card search and card images.
       </p>
       <input
         type="url"

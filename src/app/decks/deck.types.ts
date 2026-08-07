@@ -17,3 +17,20 @@ export type Deck = {
 export function deckSize(deck: Deck): number {
   return deck.list.reduce((total, entry) => total + entry.count, 0);
 }
+
+/**
+ * Id prefix of a deck that ships with the app rather than belonging to the
+ * player (`defaultdecks.md` — the `.txt` files under `public/decks/`). They are
+ * merged into everyone's deck list by `DeckStore` but are read-only: they live
+ * in the build, not in localStorage or the `decks` table, so there is nothing
+ * to rename or delete.
+ */
+export const BUILTIN_DECK_PREFIX = 'builtin:';
+
+export function builtInDeckId(file: string): string {
+  return BUILTIN_DECK_PREFIX + file;
+}
+
+export function isBuiltInDeck(id: string): boolean {
+  return id.startsWith(BUILTIN_DECK_PREFIX);
+}

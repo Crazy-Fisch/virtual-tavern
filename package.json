@@ -3,9 +3,14 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
+    "decks:manifest": "node scripts/generate-deck-manifest.mjs",
+    "prestart": "npm run decks:manifest",
     "start": "ng serve",
+    "prebuild": "npm run decks:manifest",
     "build": "ng build",
+    "prebuild:pages": "npm run decks:manifest",
     "build:pages": "ng build --base-href /virtual-tavern/ && node -e \"require('fs').copyFileSync('dist/virtual-tavern/browser/index.html','dist/virtual-tavern/browser/404.html')\"",
+    "prewatch": "npm run decks:manifest",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
