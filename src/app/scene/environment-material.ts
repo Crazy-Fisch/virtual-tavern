@@ -71,6 +71,14 @@ async function buildAndApply(
     texture.wrapS = RepeatWrapping;
     texture.wrapT = RepeatWrapping;
     texture.repeat.set(repeat, repeat);
+
+    //rotate tex
+    if(true)
+    {
+      texture.center.set(0.5, 0.5);
+      texture.rotation = Math.PI / 2;
+    }
+
     texture.anisotropy = Math.max(texture.anisotropy, ANISOTROPY);
     texture.needsUpdate = true;
   }

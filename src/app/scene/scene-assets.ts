@@ -35,7 +35,8 @@ export interface PbrTextureSet {
   readonly tileMetres: number;
 }
 
-const PLANK_FLOOR = 'textures/PlankFloor/Substance_Graph_';
+// const PLANK_FLOOR = 'textures/PlankFloor/Substance_Graph_';
+const PLANK_FLOOR = 'textures/AIWood/WoodAI_';
 
 /**
  * Substance's parquet wood, used for the tabletop (textures.md). One tile is
@@ -43,11 +44,11 @@ const PLANK_FLOOR = 'textures/PlankFloor/Substance_Graph_';
  * next to a 0.48 m card, and detailed enough to read under the fixed camera.
  */
 const PLANK_WOOD: PbrTextureSet = {
-  baseColor: `${PLANK_FLOOR}BaseColor.jpg`,
-  normal: `${PLANK_FLOOR}Normal.jpg`,
-  roughness: `${PLANK_FLOOR}Roughness.jpg`,
-  ao: `${PLANK_FLOOR}AmbientOcclusion.jpg`,
-  tileMetres: 1.2,
+  baseColor: `${PLANK_FLOOR}BaseColor.png`,
+  // normal: `textures/PlankFloor/Substance_Graph_Normal.jpg`,
+  // roughness: `${PLANK_FLOOR}Roughness.jpg`,
+  // ao: `${PLANK_FLOOR}AmbientOcclusion.jpg`,
+  tileMetres: 1.5,
 };
 
 export interface EnvironmentAsset {
