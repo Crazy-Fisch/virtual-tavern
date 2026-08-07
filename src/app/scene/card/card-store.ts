@@ -6,10 +6,14 @@ import { CARD_PREFIX, CardState } from './card.types';
 /** Defensive parse of a card world object's JSON payload. */
 function toCard(id: string, data: WorldObjectData): CardState {
   const pos = Array.isArray(data['position']) ? (data['position'] as unknown[]) : [];
+  // The second face is only carried by double-faced cards, so the keys are only
+  // set when there is one — an ordinary card round-trips exactly as before.
+  const backSrc = typeof data['backSrc'] === 'string' && data['backSrc'] ? data['backSrc'] : null;
   return {
     id,
     name: typeof data['name'] === 'string' ? data['name'] : 'a card',
     src: typeof data['src'] === 'string' ? data['src'] : '',
+    ...(backSrc ? { backSrc, flipped: data['flipped'] === true } : {}),
     position: [Number(pos[0]) || 0, Number(pos[1]) || 0, Number(pos[2]) || 0],
     yaw: typeof data['yaw'] === 'number' ? data['yaw'] : 0,
     faceUp: data['faceUp'] !== false,

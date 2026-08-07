@@ -6,7 +6,7 @@ import { RoomService } from '../room/room.service';
 import { AssetLoaderService } from '../scene/asset-loader.service';
 import { CardDropTarget, CardInteractions, DRAG_Y } from '../scene/card/card-interactions';
 import { CardStore } from '../scene/card/card-store';
-import { newCardId } from '../scene/card/card.types';
+import { CardState, newCardId } from '../scene/card/card.types';
 import { HotkeyList } from '../scene/card/hotkey-list/hotkey-list';
 import { Dialog } from '../shared/dialog/dialog';
 import { RevealPanel } from './reveal-panel/reveal-panel';
@@ -168,7 +168,11 @@ export class Zones implements OnDestroy {
    * see these DOM cards, hence the hand-off.
    */
   protected hoverHandCard(card: ZoneCard | null): void {
-    this.interactions.hoveredHandCard.set(card ? { name: card.name, src: card.src } : null);
+    // Its second face, if it has one, comes from the card database like the
+    // related names do — so `v` over a double-faced hand card can flip it too.
+    this.interactions.hoveredHandCard.set(
+      card ? { name: card.name, src: card.src, back: this.db.lookup(card.name)?.back } : null,
+    );
   }
 
   protected onResize(): void {
@@ -360,6 +364,29 @@ export class Zones implements OnDestroy {
   }
 
   /**
+   * A card leaving one of my zones for the table, face up at my seat. Zones
+   * store only a name and a front image, so everything else a table card needs
+   * — its related names and the second face of a double-faced card (mdfcs.md)
+   * — is resolved against the card database here, which also fills in art that
+   * was missing when the deck was imported.
+   */
+  private tableCard(id: string, card: ZoneCard): CardState {
+    const record = this.db.lookup(card.name);
+    return {
+      id,
+      name: card.name,
+      src: card.src || (record?.src ?? ''),
+      ...(record?.back ? { backSrc: record.back } : {}),
+      position: [0, DRAG_Y, 0],
+      yaw: this.room.seatYaw(),
+      faceUp: true,
+      tapped: false,
+      relatedNames: record?.related ?? [],
+      ownerUid: this.room.userId() ?? '',
+    };
+  }
+
+  /**
    * Play a hand card by dragging it onto the table: the card leaves the hand
    * and floats under the cursor; releasing it over the table commits the play
    * (that's when the history line is posted), anywhere else returns it to the
@@ -371,19 +398,7 @@ export class Zones implements OnDestroy {
     const id = newCardId();
     // Local-only until the drop commits: other players must not see a card
     // that is merely being considered (stabilityandimprovements.md).
-    this.cards.addLocal({
-      id,
-      name: taken.name,
-      // A card put into play resolves missing art against the card database
-      // (e.g. imported while the database was still downloading).
-      src: taken.src || (this.db.lookup(taken.name)?.src ?? ''),
-      position: [0, DRAG_Y, 0],
-      yaw: this.room.seatYaw(),
-      faceUp: true,
-      tapped: false,
-      relatedNames: this.db.lookup(taken.name)?.related ?? [],
-      ownerUid: this.room.userId() ?? '',
-    });
+    this.cards.addLocal(this.tableCard(id, taken));
     this.interactions.beginDragFromHand(id, event, {
       commit: () => this.room.sendAction(`played ${taken.name}`),
       revert: () => {
@@ -405,17 +420,7 @@ export class Zones implements OnDestroy {
     const taken = this.zones.removeFromZone(kind, card.id);
     if (!taken) return;
     const id = newCardId();
-    this.cards.addLocal({
-      id,
-      name: taken.name,
-      src: taken.src || (this.db.lookup(taken.name)?.src ?? ''),
-      position: [0, DRAG_Y, 0],
-      yaw: this.room.seatYaw(),
-      faceUp: true,
-      tapped: false,
-      relatedNames: this.db.lookup(taken.name)?.related ?? [],
-      ownerUid: this.room.userId() ?? '',
-    });
+    this.cards.addLocal(this.tableCard(id, taken));
     this.interactions.beginDragFromHand(id, event, {
       commit: () => this.room.sendAction(`put ${taken.name} onto the table`),
       revert: () => {

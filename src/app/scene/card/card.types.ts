@@ -17,6 +17,15 @@ export interface CardState {
   name: string;
   /** Image shown on the card's front face. */
   src: string;
+  /**
+   * Image of the *second* face of a double-faced card (mdfcs.md) — absent on an
+   * ordinary card, which is exactly what marks a card as double-faced. Its two
+   * face names are the halves of `name` ("Front // Back"), the way the card data
+   * spells a two-sided card.
+   */
+  backSrc?: string;
+  /** True while a double-faced card is showing its second face. */
+  flipped?: boolean;
   /** World position of the card's origin. */
   position: [number, number, number];
   /** Rotation around the world up-axis, radians ("rotate" adds π). */
@@ -37,12 +46,31 @@ export interface CardState {
   ownerUid: string;
 }
 
+/** The face of a card that is currently showing — one of its two images. */
+export function faceSrc(card: { src: string; backSrc?: string; flipped?: boolean }): string {
+  return card.flipped && card.backSrc ? card.backSrc : card.src;
+}
+
+/**
+ * The name of the face currently showing. A double-faced card is named
+ * "Front // Back" by the card data, so its faces are the two halves; every
+ * other card (including a split card, which has one image and therefore no
+ * `backSrc`) keeps its whole name.
+ */
+export function faceName(card: { name: string; backSrc?: string; flipped?: boolean }): string {
+  if (!card.backSrc) return card.name;
+  const [front, back] = card.name.split(' // ');
+  return (card.flipped ? back : front) ?? card.name;
+}
+
 /** Actions offered by the card context menu and hotkeys. */
 export type CardAction =
   | 'view'
   | 'tap'
   | 'rotate'
   | 'flip'
+  /** Turn a double-faced card over (menu only — for other cards `flip` is this). */
+  | 'turnOver'
   | 'related'
   | 'duplicate'
   | 'toHand'

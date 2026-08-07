@@ -1,12 +1,14 @@
 import { Injectable, inject } from '@angular/core';
 import { CardApiService } from '../../carddb/card-api.service';
-import { relatedNamesOf } from '../../carddb/card-database.service';
+import { facesOf, relatedNamesOf } from '../../carddb/card-database.service';
 
 /** A searchable card: what the util window needs to add it anywhere. */
 export type CardHit = {
   name: string;
   /** Front-face image URL. */
   src: string;
+  /** Second face of a double-faced card (mdfcs.md); absent otherwise. */
+  back?: string;
   /** Names of related cards (tokens, meld results, …) from the API's all_parts. */
   related: string[];
 };
@@ -21,11 +23,6 @@ type ApiCard = {
   all_parts?: { name?: string }[];
 };
 type ApiList = { data?: ApiCard[] };
-
-/** Image for a card; double-faced cards keep their images on the faces. */
-function imageOf(card: ApiCard): string | undefined {
-  return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal;
-}
 
 /**
  * Card search against the user-deposited card API (legal.md — the app ships
@@ -63,9 +60,12 @@ export class CardSearchService {
     if (!res.ok) throw new Error(`Card search failed (${res.status})`);
     const body = (await res.json()) as ApiList;
     const hits = (body.data ?? [])
-      .flatMap((card) => {
-        const src = imageOf(card);
-        return src ? [{ name: card.name, src, related: relatedNamesOf(card) }] : [];
+      .flatMap((card): CardHit[] => {
+        // A double-faced hit carries both faces, so a card dragged out of the
+        // search can be flipped on the table (mdfcs.md).
+        const { src, back } = facesOf(card);
+        if (!src) return [];
+        return [{ name: card.name, src, ...(back ? { back } : {}), related: relatedNamesOf(card) }];
       })
       .slice(0, MAX_HITS);
     this.cache.set(key, hits);

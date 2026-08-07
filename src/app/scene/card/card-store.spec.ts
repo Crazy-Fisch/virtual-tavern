@@ -66,6 +66,19 @@ describe('CardStore', () => {
     });
   });
 
+  it('carries a double-faced card’s second face and which one is showing (mdfcs.md)', () => {
+    const card = makeCard({ backSrc: 'https://example.com/back.jpg' });
+    store.add(card);
+    expect(store.card(card.id)).toMatchObject({ backSrc: 'https://example.com/back.jpg' });
+    store.update(card.id, { flipped: true });
+    expect(store.card(card.id)!.flipped).toBe(true);
+    // An ordinary card carries neither key, so it round-trips exactly as before.
+    const plain = makeCard();
+    store.add(plain);
+    expect(store.card(plain.id)).toEqual(plain);
+    expect(Object.keys(room.worldState()[plain.id]!.data)).not.toContain('backSrc');
+  });
+
   it('updates a card without touching the others', () => {
     const first = makeCard();
     const second = makeCard();

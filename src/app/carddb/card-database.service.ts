@@ -4,16 +4,18 @@ import { CardDbCache } from './card-db-cache';
 import { JsonChunkParser } from './json-chunk-parser';
 
 /** Cache key of the compact index, per deposited API base URL — changing the
- * deposit therefore loads (or downloads) that API's own index. v3 added the
- * per-card related names (all_parts), so older indexes must be rebuilt. */
+ * deposit therefore loads (or downloads) that API's own index. v4 added the
+ * second face of double-faced cards (mdfcs.md), v3 the per-card related names
+ * (all_parts), so older indexes must be rebuilt. */
 function indexKey(base: string): string {
-  return `index:v3:${base}`;
+  return `index:v4:${base}`;
 }
 
-/** Key the same base's index was cached under before related names existed;
- * superseded, so it is deleted when the v3 index is (re)built. */
-function staleIndexKey(base: string): string {
-  return `index:v2:${base}`;
+/** Keys the same base's index was cached under before related names (v2) and
+ * before the second face (v3); superseded, so both are deleted when the current
+ * index is (re)built. */
+function staleIndexKeys(base: string): string[] {
+  return [`index:v2:${base}`, `index:v3:${base}`];
 }
 
 /** Key of the index cached by builds that still shipped an app-level bulk URL
@@ -28,6 +30,8 @@ export type CardRecord = {
   name: string;
   /** Front-face image URL, '' when the card has no image. */
   src: string;
+  /** Second-face image of a double-faced card (mdfcs.md); absent otherwise. */
+  back?: string;
   /** Related card names from the card data's all_parts; absent when none. */
   related?: string[];
 };
@@ -40,6 +44,22 @@ type BulkCard = {
   card_faces?: { image_uris?: { normal?: string } }[];
   all_parts?: { name?: string }[];
 };
+
+/**
+ * The one or two images a card object carries (mdfcs.md). A genuinely
+ * two-sided card (transform, modal DFC, reversible…) has no whole-card image
+ * and keeps one per face; a split/flip/adventure card has a single image and
+ * only *reads* as two halves, so it gets no back and never flips.
+ */
+export function facesOf(card: {
+  image_uris?: { normal?: string };
+  card_faces?: { image_uris?: { normal?: string } }[];
+}): { src: string; back?: string } {
+  const whole = card.image_uris?.normal;
+  if (whole) return { src: whole };
+  const faces = card.card_faces ?? [];
+  return { src: faces[0]?.image_uris?.normal ?? '', back: faces[1]?.image_uris?.normal };
+}
 
 /**
  * Names a card object is related to — its `all_parts` minus itself, deduped.
@@ -186,7 +206,7 @@ export class CardDatabaseService {
       if (signal.aborted) return;
       this.adopt(index);
       await this.cache.put(indexKey(base), index).catch(() => undefined); // best-effort
-      await this.cache.delete(staleIndexKey(base)); // superseded pre-related index
+      for (const key of staleIndexKeys(base)) await this.cache.delete(key); // superseded indexes
     } catch (err) {
       if (signal.aborted) return;
       console.warn('[carddb] Card database unavailable.', err);
@@ -261,16 +281,18 @@ export class CardDatabaseService {
    * are ordinary card objects in the bulk file and index like any other, which
    * is what lets related names resolve to an image. Double-faced names
    * ("A // B") also resolve by their front face, since decklists usually carry
-   * only that — the front key shares the record, so later merges reach both.
+   * only that — the front key shares the record, so later merges reach both,
+   * and with them the second face such a card flips to (mdfcs.md).
    */
   private add(index: Record<string, CardRecord>, card: BulkCard): void {
     if (!card.name) return;
-    const src = card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? '';
+    const { src, back } = facesOf(card);
     const related = relatedNamesOf(card);
     const key = card.name.toLowerCase();
     let record = index[key];
     if (!record) record = index[key] = { name: card.name, src };
     else if (!record.src && src) record.src = src;
+    if (back && !record.back) record.back = back;
     if (related.length && !record.related?.length) record.related = related;
     const front = card.name.split(' // ')[0]!;
     if (front !== card.name) {

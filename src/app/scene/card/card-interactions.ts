@@ -7,7 +7,7 @@ import { ItemStore } from '../item/item-store';
 import { ItemAction, ItemState, isItemId, itemLabel } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
 import { CardStore } from './card-store';
-import { CardAction, CardState, GROUP_ACTIONS, newCardId } from './card.types';
+import { CardAction, CardState, GROUP_ACTIONS, faceName, newCardId } from './card.types';
 import { HOTKEYS } from './hotkeys';
 
 /** Height a card floats at while being moved (tabletop is at y ≈ 0.2). */
@@ -84,6 +84,8 @@ export interface CardDropTarget {
 export interface SpawnCard {
   name: string;
   src: string;
+  /** Second face of a double-faced card, if it has one (mdfcs.md). */
+  back?: string;
   /** Related names the spawned card should carry (so its own "related" works). */
   related?: string[];
 }
@@ -338,6 +340,7 @@ export class CardInteractions {
       id,
       name: card.name,
       src: card.src,
+      ...(card.back ? { backSrc: card.back } : {}),
       position: [0, DRAG_Y, 0],
       yaw: this.room.seatYaw(),
       faceUp: true,
@@ -431,8 +434,14 @@ export class CardInteractions {
         this.room.sendAction(`rotated ${card.name}`);
         break;
       case 'flip':
-        this.store.update(cardId, { faceUp: !card.faceUp });
-        this.room.sendAction(`turned ${card.name} face ${card.faceUp ? 'down' : 'up'}`);
+        // A double-faced card's "other side" is a second front, not the card
+        // back (mdfcs.md), so flipping one lying face up transforms it. Face
+        // down, there is nothing to transform — turn it back over.
+        if (card.backSrc && card.faceUp) this.transform(card);
+        else this.turnOver(card);
+        break;
+      case 'turnOver':
+        this.turnOver(card);
         break;
       case 'related': {
         const anchor = this.screenPointOf(cardId);
@@ -460,6 +469,20 @@ export class CardInteractions {
         this.room.sendAction(`removed ${card.name}`);
         break;
     }
+  }
+
+  /** Show a double-faced card's other face (mdfcs.md). It stays face up — this
+   * is the card transforming, not being turned over. */
+  private transform(card: CardState): void {
+    const flipped = !card.flipped;
+    this.store.update(card.id, { flipped });
+    this.room.sendAction(`flipped ${faceName(card)} to ${faceName({ ...card, flipped })}`);
+  }
+
+  /** Turn a card over: its back (the card back) up, or its face back up. */
+  private turnOver(card: CardState): void {
+    this.store.update(card.id, { faceUp: !card.faceUp });
+    this.room.sendAction(`turned ${card.name} face ${card.faceUp ? 'down' : 'up'}`);
   }
 
   /**

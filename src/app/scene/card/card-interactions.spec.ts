@@ -71,6 +71,58 @@ describe('CardInteractions', () => {
     ]);
   });
 
+  describe('double-faced cards (mdfcs.md)', () => {
+    /** A card with a second face, as the card database resolves one. */
+    function addDoubleFaced(): string {
+      const id = newCardId();
+      store.add({
+        id,
+        name: 'Delver of Secrets // Insectile Aberration',
+        src: 'https://img/delver.jpg',
+        backSrc: 'https://img/aberration.jpg',
+        position: [1, 0.5, 0],
+        yaw: 0,
+        faceUp: true,
+        tapped: false,
+        relatedNames: [],
+        ownerUid: 'user-1',
+      });
+      room.actions.length = 0;
+      return id;
+    }
+
+    it('flip shows the other face instead of turning the card over', () => {
+      const id = addDoubleFaced();
+      interactions.act(id, 'flip');
+      expect(store.card(id)).toMatchObject({ flipped: true, faceUp: true });
+      interactions.act(id, 'flip');
+      expect(store.card(id)).toMatchObject({ flipped: false, faceUp: true });
+      expect(room.actions).toEqual([
+        'flipped Delver of Secrets to Insectile Aberration',
+        'flipped Insectile Aberration to Delver of Secrets',
+      ]);
+    });
+
+    it('turnOver still turns it face down, and flip brings it back up', () => {
+      const id = addDoubleFaced();
+      interactions.act(id, 'turnOver');
+      expect(store.card(id)).toMatchObject({ faceUp: false, flipped: false });
+      // Face down there is no other face to show — flip is a turn-over again.
+      interactions.act(id, 'flip');
+      expect(store.card(id)).toMatchObject({ faceUp: true, flipped: false });
+      expect(room.actions).toEqual([
+        'turned Delver of Secrets // Insectile Aberration face down',
+        'turned Delver of Secrets // Insectile Aberration face up',
+      ]);
+    });
+
+    it('a card with only one face is turned over by flip, as before', () => {
+      interactions.act(cardId, 'flip');
+      expect(store.card(cardId)).toMatchObject({ faceUp: false });
+      expect(store.card(cardId)!.flipped).toBeUndefined();
+    });
+  });
+
   it('view opens the view dialog and closes the context menu', () => {
     interactions.contextMenu.set({ id: cardId, x: 10, y: 10 });
     interactions.act(cardId, 'view');
@@ -418,6 +470,24 @@ describe('CardInteractions', () => {
       expect(room.worldState()[spawned.id]).toBeDefined();
       expect(store.card(spawned.id)!.ownerUid).toBe('user-1');
       expect(room.actions).toEqual(['added Goblin Token']);
+    });
+
+    it('a dragged-out search hit keeps its second face, so it can be flipped on the table', () => {
+      interactions.armSpawnCardDrag(
+        new MouseEvent('pointerdown', { button: 0, clientX: 5, clientY: 5 }) as PointerEvent,
+        {
+          name: 'Delver of Secrets // Insectile Aberration',
+          src: 'https://img/delver.jpg',
+          back: 'https://img/aberration.jpg',
+        },
+      );
+      const at = screenAt(2, 0, 1);
+      move(at);
+      up(at);
+      const spawned = store.cards().find((c) => c.src === 'https://img/delver.jpg')!;
+      expect(spawned.backSrc).toBe('https://img/aberration.jpg');
+      interactions.act(spawned.id, 'flip');
+      expect(store.card(spawned.id)!.flipped).toBe(true);
     });
 
     it('a spawned search hit released off the table is discarded without a trace', () => {

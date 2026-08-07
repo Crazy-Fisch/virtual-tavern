@@ -98,10 +98,20 @@ const BULK = JSON.stringify([
   { name: 'Lightning Bolt', image_uris: { normal: 'https://img/bolt.jpg' } },
   // A reprint of the same card must not overwrite the first printing.
   { name: 'Lightning Bolt', image_uris: { normal: 'https://img/bolt-reprint.jpg' } },
-  // Double-faced: image lives on the front face; resolvable by front name too.
+  // Double-faced: an image per face, no whole-card one; resolvable by front name too.
   {
     name: 'Delver of Secrets // Insectile Aberration',
-    card_faces: [{ image_uris: { normal: 'https://img/delver.jpg' } }, {}],
+    card_faces: [
+      { image_uris: { normal: 'https://img/delver.jpg' } },
+      { image_uris: { normal: 'https://img/aberration.jpg' } },
+    ],
+  },
+  // Split card: two halves, but ONE image — it is not double-faced and must
+  // get no back, or the table would offer to flip it (mdfcs.md).
+  {
+    name: 'Fire // Ice',
+    image_uris: { normal: 'https://img/fire-ice.jpg' },
+    card_faces: [{}, {}],
   },
   // Related cards: all_parts names (minus the card itself) are kept, and the
   // token they point at is an ordinary card object that indexes like any other.
@@ -173,11 +183,19 @@ describe('CardDatabaseService', () => {
     });
     expect(service.lookup('Delver of Secrets')!.src).toBe('https://img/delver.jpg');
     expect(service.lookup('No Such Card')).toBeUndefined();
+    // Both faces of a double-faced card, reachable by the front name a decklist
+    // carries; a split card's single image gives no second face (mdfcs.md).
+    expect(service.lookup('Delver of Secrets')!.back).toBe('https://img/aberration.jpg');
+    expect(service.lookup('delver of secrets // insectile aberration')!.back).toBe(
+      'https://img/aberration.jpg',
+    );
+    expect(service.lookup('Fire // Ice')!.back).toBeUndefined();
+    expect(service.lookup('Fire')!.src).toBe('https://img/fire-ice.jpg');
     // Related names (all_parts minus self) resolve, incl. the token they name.
     expect(service.lookup('Wormcaller')!.related).toEqual(['Worm Token']);
     expect(service.lookup('Worm Token')!.src).toBe('https://img/worm-token.jpg');
     expect(service.progress()).toBe(1);
-    expect(cache.store.has('index:v3:https://api.example.com')).toBe(true);
+    expect(cache.store.has('index:v4:https://api.example.com')).toBe(true);
   });
 
   it('indexes a JSON Lines export offered via jsonl_download_uri', async () => {
@@ -220,7 +238,7 @@ describe('CardDatabaseService', () => {
     const index: Record<string, CardRecord> = {
       'cached card': { name: 'Cached Card', src: 'https://img/cached.jpg' },
     };
-    cache.store.set('index:v3:https://api.example.com', index);
+    cache.store.set('index:v4:https://api.example.com', index);
     const fetchMock = stubApi();
     init();
     apiUrl.set('https://api.example.com');
@@ -230,17 +248,18 @@ describe('CardDatabaseService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('a pre-related (v2) index is rebuilt and its cache entry dropped', async () => {
-    cache.store.set('index:v2:https://api.example.com', {
-      'stale card': { name: 'Stale Card', src: 'https://img/stale.jpg' },
-    });
+  it('older indexes (pre-related v2, pre-second-face v3) are rebuilt and dropped', async () => {
+    const stale = { 'stale card': { name: 'Stale Card', src: 'https://img/stale.jpg' } };
+    cache.store.set('index:v2:https://api.example.com', stale);
+    cache.store.set('index:v3:https://api.example.com', stale);
     const fetchMock = stubApi();
     init();
     apiUrl.set('https://api.example.com');
     await vi.waitFor(() => expect(service.status()).toBe('ready'));
-    expect(fetchMock).toHaveBeenCalled(); // the old index did not satisfy v3
+    expect(fetchMock).toHaveBeenCalled(); // neither old index satisfied v4
     expect(cache.store.has('index:v2:https://api.example.com')).toBe(false);
-    expect(cache.store.has('index:v3:https://api.example.com')).toBe(true);
+    expect(cache.store.has('index:v3:https://api.example.com')).toBe(false);
+    expect(cache.store.has('index:v4:https://api.example.com')).toBe(true);
     expect(service.lookup('Stale Card')).toBeUndefined();
   });
 

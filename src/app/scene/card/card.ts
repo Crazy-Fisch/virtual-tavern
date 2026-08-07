@@ -4,7 +4,7 @@ import { AssetLoaderService } from '../asset-loader.service';
 import { CARD_MODEL_URL } from '../scene-assets';
 import { SceneGraph } from '../scene-graph';
 import { CardInteractions } from './card-interactions';
-import { CardState } from './card.types';
+import { CardState, faceSrc } from './card.types';
 
 const HALF_PI = Math.PI / 2;
 /** Slight white tint (emissive) applied to a card's non-art materials while hovered. */
@@ -59,8 +59,10 @@ export class Card implements OnDestroy {
   constructor() {
     void this.spawn();
     // React to later state changes; initial values are applied by spawn().
+    // The face shown is the state's src — or, on a double-faced card that has
+    // been flipped, its second face (mdfcs.md).
     effect(() => {
-      const src = this.state().src;
+      const src = faceSrc(this.state());
       if (this.frontMaterial && src !== this.appliedSrc) void this.applyImage(src);
     });
     effect(() => {
@@ -107,7 +109,7 @@ export class Card implements OnDestroy {
       this.interactions.register(state.id, wrapper);
       this.applyHover(untracked(this.interactions.hoveredId) === state.id);
 
-      await this.applyImage(state.src);
+      await this.applyImage(faceSrc(state));
     } catch (err) {
       console.warn('[card] Card model unavailable.', err);
     }

@@ -55,6 +55,37 @@ describe('CardSearchService', () => {
     expect(fetchMock.mock.calls[0]![0]).toContain('include_extras=true');
   });
 
+  it('carries both faces of a double-faced hit, and none for a split card (mdfcs.md)', async () => {
+    fetchMock.mockResolvedValue(
+      scryfallResponse(200, {
+        data: [
+          {
+            name: 'Delver of Secrets // Insectile Aberration',
+            card_faces: [
+              { image_uris: { normal: 'https://img/delver.jpg' } },
+              { image_uris: { normal: 'https://img/aberration.jpg' } },
+            ],
+          },
+          // Two halves, one image: reads as "A // B" but has no other side.
+          {
+            name: 'Fire // Ice',
+            image_uris: { normal: 'https://img/fire-ice.jpg' },
+            card_faces: [{}, {}],
+          },
+        ],
+      }),
+    );
+    expect(await service.search('delver')).toEqual([
+      {
+        name: 'Delver of Secrets // Insectile Aberration',
+        src: 'https://img/delver.jpg',
+        back: 'https://img/aberration.jpg',
+        related: [],
+      },
+      { name: 'Fire // Ice', src: 'https://img/fire-ice.jpg', related: [] },
+    ]);
+  });
+
   it('refuses to search while no API has been deposited (legal.md)', async () => {
     apiUrl = null;
     await expect(service.search('worm')).rejects.toThrow('No card API deposited');

@@ -155,7 +155,8 @@ drop that hits nothing snaps the card back; Escape cancels; a plain click taps/u
 a networked quarter turn via the `tapped` field on CardState), posts action-history lines, and
 owns the popup state rendered by
 `CardOverlay` (context menus for cards — view/tap/rotate/flip/related/duplicate/to-hand/
-to-deck/to-graveyard/to-exile/delete, and the item menu) plus the **util window**
+to-deck/to-graveyard/to-exile/delete, plus **turnOver** on a double-faced card only, and the
+item menu) plus the **util window**
 (`src/app/scene/util-window/`), opened by right-clicking empty table: the game items
 (dice/coin/counters, see below) above a debounced card search
 via `CardSearchService` (`card-search.service.ts` — fetches `{base}/cards/search` on the
@@ -167,7 +168,17 @@ widget absorbs it, a miss discards it unseen; the former per-hit Table/Hand/Deck
 gone). **Related cards** work the same way: `CardState.relatedNames` carries the names from
 the card data's `all_parts` (populated by search hits and, for deck cards, by
 `CardDatabaseService.lookup`), the panel resolves them to images via the card database, and
-each entry is draggable onto the table (click = view large). Hotkeys on the hovered card
+each entry is draggable onto the table (click = view large).
+**Double-faced cards** (`designdocs/mdfcs.md`) ride along the same seam: a card object with
+no whole-card image but an image per `card_faces` entry is two-sided, so `facesOf()`
+(card-database.service.ts, shared with `CardSearchService`) yields `{src, back}` and
+`CardState` carries `backSrc` + `flipped`. `flip`/**F** on such a card lying face up
+_transforms_ it — the "other side" is a second front, not the card back — while a face-down
+one turns back up and the menu's extra "Turn face down" entry covers the rest; the two face
+names are the halves of the card's `"Front // Back"` name (`faceName()`/`faceSrc()` in
+`card.types.ts`; a split card has one image, hence no `backSrc`, and never flips). The large
+card view gains a "Flip to …" button for them — one dialog now serves table cards, related
+entries and hand cards, and its flip is view-only (it never writes to the card). Hotkeys on the hovered card
 live in the `HOTKEYS` record — which, with the labels and the read-only overview built from
 it, lives in **`src/app/scene/card/hotkeys.ts`** (`designdocs/hotkeys.md`; keep that file free
 of Three imports — the `HotkeyList` component beside it renders `HOTKEY_GUIDE`, and it is
@@ -320,13 +331,17 @@ gunzips `.gz` files in-stream (`DecompressionStream`, chosen by sniffing the mag
 headers can't distinguish a raw `.gz` file from a transparently `Content-Encoding`-inflated
 response), and streams it through `JsonChunkParser` (JSON array **or** JSON Lines; ~450 MB —
 never buffered whole; bounded memory), caching the distilled index. `lookup(name)`
-resolves decklist names (incl. double-faced front faces) to `{name, src, related?}` —
-`related` holds the card's `all_parts` names (tokens it creates, meld results, …), and
+resolves decklist names (incl. double-faced front faces) to `{name, src, back?, related?}` —
+`related` holds the card's `all_parts` names (tokens it creates, meld results, …), `back` the
+second face of a double-faced card (mdfcs.md; the front-name alias shares the record, so a
+decklist that spells only the front still reaches it), and
 tokens are indexed like any other bulk-file card, which is what the related panel resolves
-against. The cache key embeds the API base URL plus an index version (`index:v3:` since
-related names were added; a same-base v2 entry is deleted after the rebuild), so changing
+against. The cache key embeds the API base URL plus an index version (`index:v4:` since the
+second face was added; the same base's v2/v3 entries are deleted after the rebuild), so changing
 the deposit loads that API's own index (and the pre-deposit legacy cache entry is deleted
-on boot).
+on boot). Zone cards keep only a name and a front image: `Zones.tableCard()` re-resolves the
+related names **and** the second face through `lookup` whenever a card leaves a zone for the
+table, so those facts live in exactly one place.
 
 ### 3D assets
 
