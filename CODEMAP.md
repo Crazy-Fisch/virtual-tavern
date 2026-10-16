@@ -88,3 +88,7 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 - `DeckStore.import` resolves prints before storing; `resolvedList(deck)` (used by Zones.confirmDeck) resolves leftovers (built-in decks, imports without API) and saves them back for own decks; `setPrint(deckId, index, print|undefined, count?)` sets/clears the art of a line (splits copies, merges equal lines, persists local or cloud). t6 calls `setPrint`.
 - Card db index is `index:v5` (stores `set`/`collector` of the shown print); default print per name = highest `printScore` (English, not full-art/textless/borderless), earliest on ties.
 - Not done: ZoneCard has no `back`, so a chosen DFC print still flips to the default back face (`tableCard` uses `db.lookup().back`).
+
+## Done: artwork picker (t6)
+- `ArtworkPicker` (decks/artwork-picker/): dialog with a print grid (set code, #, language, set name, full-art/textless/borderless/promo tag) from `CardPrintService.listPrints(name, signal, allLanguages)`; filters English only (reloads with `lang:any` when off) and hide full-art/textless; "Apply to N of M copies" splits a line; "Use default art" clears. Saves via `DeckStore.setPrint`. `CardPrint.lang` added.
+- Decks deck view: "Change artwork" button per card tile (own decks with a card API only; built-in decks show a note). `viewDeck` computed follows the store so a change shows at once; in game `confirmDeck` already reads `entrySrc`, so each line's art reaches the hand and table.

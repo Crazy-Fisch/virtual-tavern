@@ -272,6 +272,37 @@
     object-fit: cover;
   }
 
+  .art-btn {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 0.4rem;
+    background: rgba(18, 18, 26, 0.85);
+    color: #eee;
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
+
+    &:hover {
+      border-color: #6c4cff;
+    }
+  }
+
+  &:hover .art-btn,
+  .art-btn:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .art-btn {
+      opacity: 1;
+    }
+  }
+
   // Pink placeholder for a name the card database doesn't know at all.
   &.missing {
     background: #ff9ecb;

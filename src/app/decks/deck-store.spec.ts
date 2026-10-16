@@ -227,6 +227,26 @@ describe('DeckStore', () => {
     expect(readLocal()).toEqual([]);
   });
 
+  it('setPrint splits a line so two Forest entries hold different arts', async () => {
+    const local = { id: 'g1', name: 'Lands', list: [{ card: 'Forest', count: 20 }] };
+    localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify([local]));
+    const { store } = setup({ guest: true });
+    await flush();
+    const a = { set: 'ltr', collector: '276', id: 'a', src: 'a.jpg' };
+    const b = { set: 'neo', collector: '294', id: 'b', src: 'b.jpg' };
+
+    store.setPrint('g1', 0, a, 12);
+    store.setPrint('g1', 0, b, 8);
+    expect(store.decks()[0]!.list).toEqual([
+      { card: 'Forest', count: 8, print: b },
+      { card: 'Forest', count: 12, print: a },
+    ]);
+
+    store.setPrint('g1', 0, a);
+    expect(store.decks()[0]!.list).toEqual([{ card: 'Forest', count: 20, print: a }]);
+    expect(readLocal()).toMatchObject([{ list: [{ card: 'Forest', count: 20, print: a }] }]);
+  });
+
   it('uploads a guest’s local decks into a new account on sign-in, then clears local', async () => {
     const local = { id: 'old1', name: 'Old Deck', list: [{ card: 'Swamp', count: 2 }] };
     localStorage.setItem(LOCAL_DECKS_KEY, JSON.stringify([local, { nope: true }]));

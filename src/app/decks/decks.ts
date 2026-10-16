@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { CardApiService } from '../carddb/card-api.service';
 import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
 import { Dialog } from '../shared/dialog/dialog';
+import { ArtworkPicker } from './artwork-picker/artwork-picker';
 import { DeckStore } from './deck-store';
 import { Deck, DeckEntry, deckSize, entrySrc, isBuiltInDeck } from './deck.types';
 
@@ -20,7 +21,7 @@ type DeckMenu = { deck: Deck; x: number; y: number };
  */
 @Component({
   selector: 'app-decks',
-  imports: [RouterLink, Dialog],
+  imports: [RouterLink, Dialog, ArtworkPicker],
   templateUrl: './decks.html',
   styleUrl: './decks.scss',
   standalone: true,
@@ -40,6 +41,17 @@ export class Decks {
   protected readonly menu = signal<DeckMenu | null>(null);
   /** The deck whose full-page card view is open, or null for the overview. */
   protected readonly viewing = signal<Deck | null>(null);
+  /** The deck as the store holds it now, so a changed artwork shows at once. */
+  protected readonly viewDeck = computed(() => {
+    const open = this.viewing();
+    return open ? (this.store.decks().find((d) => d.id === open.id) ?? open) : null;
+  });
+  /** Index of the deck line whose artwork picker is open, or null when closed. */
+  protected readonly artworkOf = signal<number | null>(null);
+  protected readonly artworkEntry = computed(() => {
+    const index = this.artworkOf();
+    return index === null ? null : (this.viewDeck()?.list[index] ?? null);
+  });
   /** In-flight rename: the deck plus the edited name text, or null when closed. */
   protected readonly renaming = signal<{ id: string; name: string } | null>(null);
   /** The card-API modal's text field, or null while the modal is closed. */
@@ -100,6 +112,7 @@ export class Decks {
   }
 
   protected closeView(): void {
+    this.artworkOf.set(null);
     this.viewing.set(null);
   }
 

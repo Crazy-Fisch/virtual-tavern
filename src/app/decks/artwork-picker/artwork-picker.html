@@ -1,0 +1,71 @@
+<app-dialog [heading]="'Artwork — ' + entry().card" [fit]="true" (close)="close.emit()">
+  <div class="picker">
+    <div class="filters">
+      <label>
+        <input
+          type="checkbox"
+          [checked]="englishOnly()"
+          (change)="englishOnly.set(!englishOnly())"
+        />
+        English only
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          [checked]="hideSpecial()"
+          (change)="hideSpecial.set(!hideSpecial())"
+        />
+        Hide full-art / textless
+      </label>
+      @if (entry().count > 1) {
+        <label class="copies">
+          Apply to
+          <input
+            type="number"
+            min="1"
+            [max]="entry().count"
+            [value]="applyTo()"
+            (input)="onCopies($event)"
+          />
+          of {{ entry().count }} copies
+        </label>
+      }
+      @if (entry().print) {
+        <button type="button" class="reset" (click)="reset()">Use default art</button>
+      }
+      @if (!loading() && !error()) {
+        <span class="tally">{{ shown().length }} of {{ all().length }} prints</span>
+      }
+    </div>
+
+    @if (loading()) {
+      <p class="note">Loading prints…</p>
+    } @else if (error(); as e) {
+      <p class="note error">{{ e }}</p>
+    } @else {
+      <div class="prints">
+        @for (p of shown(); track p.id) {
+          <button
+            type="button"
+            class="print"
+            [class.current]="isCurrent(p)"
+            [title]="p.setName + ' #' + p.collector"
+            (click)="choose(p)"
+          >
+            <img [src]="p.src" [alt]="p.name" crossorigin="anonymous" loading="lazy" />
+            <span class="meta">
+              <span class="set">{{ p.set.toUpperCase() }} #{{ p.collector }}</span>
+              <span class="lang">{{ p.lang }}</span>
+            </span>
+            <span class="set-name">{{ p.setName }}</span>
+            @if (tag(p); as t) {
+              <span class="tag">{{ t }}</span>
+            }
+          </button>
+        } @empty {
+          <p class="note">No prints match these filters.</p>
+        }
+      </div>
+    }
+  </div>
+</app-dialog>

@@ -11,6 +11,8 @@ export type CardPrint = {
   set: string;
   setName: string;
   collector: string;
+  /** Language code, e.g. `en`, `ja`. */
+  lang: string;
   /** Release date, `YYYY-MM-DD`. */
   released: string;
   src: string;
@@ -27,6 +29,7 @@ type ApiCard = {
   set?: string;
   set_name?: string;
   collector_number?: string;
+  lang?: string;
   released_at?: string;
   full_art?: boolean;
   textless?: boolean;
@@ -56,6 +59,7 @@ function printOf(card: ApiCard): CardPrint | null {
     set: card.set,
     setName: card.set_name ?? card.set.toUpperCase(),
     collector: card.collector_number ?? '',
+    lang: card.lang ?? 'en',
     released: card.released_at ?? '',
     src,
     ...(back ? { back } : {}),
@@ -98,13 +102,14 @@ export class CardPrintService {
   private lastRequest = 0;
 
   /**
-   * English prints of a card, newest first (`order=released`), with the
-   * full-art / textless / borderless flags the picker shows. Empty when the
-   * card is unknown; throws on a network or API failure.
+   * Prints of a card, newest first (`order=released`), with the full-art /
+   * textless / borderless flags the picker shows: English only, or every
+   * language with `allLanguages`. Empty when the card is unknown; throws on a
+   * network or API failure.
    */
-  async listPrints(name: string, signal?: AbortSignal): Promise<CardPrint[]> {
+  async listPrints(name: string, signal?: AbortSignal, allLanguages = false): Promise<CardPrint[]> {
     const base = this.requireBase();
-    const query = `!"${name.replace(/"/g, '')}" lang:en`;
+    const query = `!"${name.replace(/"/g, '')}" lang:${allLanguages ? 'any' : 'en'}`;
     const key = `prints|${base}|${query}`;
     const cached = this.cache.get(key) as CardPrint[] | undefined;
     if (cached) return cached;

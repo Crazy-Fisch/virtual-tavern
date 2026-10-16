@@ -5,7 +5,7 @@
     } @else {
       <a class="back" routerLink="/">← Menu</a>
     }
-    <h1>{{ viewing()?.name || 'Decks' }}</h1>
+    <h1>{{ viewDeck()?.name || 'Decks' }}</h1>
     <span class="db-status">{{ dbLabel() }}</span>
     <button
       type="button"
@@ -17,13 +17,16 @@
     </button>
   </header>
 
-  @if (viewing(); as deck) {
+  @if (viewDeck(); as deck) {
     <!-- Full-page deck view: every card in the list, images from the card database. -->
     <div class="deck-view">
       @if (!db.ready()) {
         <p class="view-note">
           The card database isn’t ready yet — some cards may show as placeholders.
         </p>
+      }
+      @if (isBuiltIn(deck.id)) {
+        <p class="view-note">Included decks can’t be edited, so their artwork can’t be changed.</p>
       }
       <div class="card-grid">
         @for (entry of deck.list; track $index) {
@@ -38,6 +41,16 @@
                 crossorigin="anonymous"
                 loading="lazy"
               />
+            }
+            @if (!isBuiltIn(deck.id) && api.configured()) {
+              <button
+                type="button"
+                class="art-btn"
+                title="Change artwork"
+                (click)="artworkOf.set($index)"
+              >
+                Change artwork
+              </button>
             }
             <figcaption>
               <span class="cname">{{ entry.card }}</span>
@@ -111,6 +124,15 @@
     </div>
   }
 </div>
+
+@if (artworkEntry(); as entry) {
+  <app-artwork-picker
+    [deckId]="viewDeck()!.id"
+    [index]="artworkOf()!"
+    [entry]="entry"
+    (close)="artworkOf.set(null)"
+  />
+}
 
 @if (renaming(); as r) {
   <app-dialog heading="Rename deck" (close)="renaming.set(null)">
