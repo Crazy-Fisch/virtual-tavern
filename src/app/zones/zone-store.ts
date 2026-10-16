@@ -33,7 +33,7 @@ function parseCards(value: unknown): ZoneCard[] {
 const ROUND_DECK_KEY = 'virtual-tavern.round-deck';
 
 function emptyZones(uid: string, name: string): PlayerZones {
-  return { uid, name, hand: [], deck: [], graveyard: [], exile: [], life: null };
+  return { uid, name, hand: [], deck: [], graveyard: [], exile: [], life: null, poison: 0 };
 }
 
 /** History line for a card leaving the table for each zone. */
@@ -89,6 +89,8 @@ export class ZoneStore {
       const zones = players.get(id.slice(LIFE_PREFIX.length));
       const life = state.data['life'];
       if (zones && typeof life === 'number') zones.life = life;
+      const poison = state.data['poison'];
+      if (zones && typeof poison === 'number') zones.poison = poison;
     }
     return [...players.values()];
   });
@@ -190,7 +192,8 @@ export class ZoneStore {
         ['deck', shuffled(deck.map((c) => ({ ...c, id: crypto.randomUUID() })))],
       ]);
       const start = this.room.worldState()[lifeId(uid)]?.data['start'];
-      if (typeof start === 'number') this.room.setWorldObject(lifeId(uid), { life: start, start });
+      if (typeof start === 'number')
+        this.room.setWorldObject(lifeId(uid), { life: start, start, poison: 0 });
     } else {
       this.room.removeWorldObjects([...ZONE_KINDS.map((k) => zoneId(uid, k)), lifeId(uid)]);
     }
@@ -311,8 +314,11 @@ export class ZoneStore {
   takeFromTable(card: CardState, kind: ZoneKind): void {
     // A hand card dropped onto a zone widget mid-drag is still local-only —
     // there is no shared object to delete (see CardStore.addLocal).
-    if (this.room.worldState()[card.id]) this.room.removeWorldObject(card.id);
+    const onTable = !!this.room.worldState()[card.id];
+    if (onTable) this.room.removeWorldObject(card.id);
     this.addCard(kind, { id: crypto.randomUUID(), name: card.name, src: card.src });
+    // A local-only card dropped back on the hand never left it: no history line.
+    if (kind === 'hand' && !onTable) return;
     this.room.sendAction(TAKE_ACTIONS[kind](card.name));
   }
 
@@ -368,8 +374,22 @@ export class ZoneStore {
     this.room.setWorldObject(lifeId(uid), {
       life,
       start: typeof start === 'number' ? start : life,
+      poison: this.mine().poison,
     });
     if (first) this.room.sendAction(`set their starting life to ${life}`);
+  }
+
+  /** Set my infect/poison counters (0 and up). Silent like life changes; needs a life total first. */
+  setPoison(poison: number): void {
+    const uid = this.room.userId();
+    const { life } = this.mine();
+    if (!uid || life === null) return;
+    const start = this.room.worldState()[lifeId(uid)]?.data['start'];
+    this.room.setWorldObject(lifeId(uid), {
+      life,
+      start: typeof start === 'number' ? start : life,
+      poison: Math.max(0, Math.round(poison)),
+    });
   }
 
   /**

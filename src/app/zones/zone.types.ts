@@ -1,10 +1,13 @@
 /** World-object id prefix for player zones (see room.types.ts). */
 export const ZONE_PREFIX = 'zone:';
-/** World-object id prefix for a player's life total (`life:<uid>`, data `{ life }`). */
+/** World-object id prefix for a player's life total (`life:<uid>`, data `{ life, start, poison }`). */
 export const LIFE_PREFIX = 'life:';
 
 /** World-object id of the room's round marker (data `{ n, startedBy }`); a higher `n` resets every player. */
 export const ROUND_ID = 'round:current';
+
+/** Poison/infect counters at which a player loses. */
+export const POISON_LETHAL = 10;
 
 export type ZoneKind = 'hand' | 'deck' | 'graveyard' | 'exile';
 export const ZONE_KINDS: readonly ZoneKind[] = ['hand', 'deck', 'graveyard', 'exile'];
@@ -53,4 +56,6 @@ export type PlayerZones = {
   exile: ZoneCard[];
   /** Life total (`life:<uid>` world object), or null until the player picks a starting total. */
   life: number | null;
+  /** Infect/poison counters, stored in the same `life:<uid>` object (0 when absent). */
+  poison: number;
 };

@@ -5,6 +5,14 @@
     <div class="opp">
       <span class="opp-name">{{ p.name }}</span>
       <span class="opp-life" title="Life">♥ {{ p.life ?? '—' }}</span>
+      @if (p.poison > 0) {
+        <span
+          class="opp-poison"
+          [class.lethal]="p.poison >= poisonLethal"
+          title="Infect (poison) counters"
+          >☠ {{ p.poison }}</span
+        >
+      }
 
       <div class="opp-hand" [title]="p.hand.length + ' cards in hand'">
         @for (c of p.hand.slice(0, maxHand); track c.id) {
@@ -95,10 +103,37 @@
         }
       </div>
     } @else {
-      <div class="life">
-        <button type="button" class="life-btn" title="Lose 1 life" (click)="bumpLife(-1)">−</button>
-        <span class="life-total">{{ me.life }}</span>
-        <button type="button" class="life-btn" title="Gain 1 life" (click)="bumpLife(1)">+</button>
+      <div class="counters">
+        <div class="life">
+          <button type="button" class="life-btn" title="Lose 1 life" (click)="bumpLife(-1)">
+            −
+          </button>
+          <span class="life-total">{{ me.life }}</span>
+          <button type="button" class="life-btn" title="Gain 1 life" (click)="bumpLife(1)">
+            +
+          </button>
+        </div>
+        <div class="life poison" [class.lethal]="me.poison >= poisonLethal">
+          <button
+            type="button"
+            class="life-btn"
+            title="Remove an infect counter"
+            (click)="bumpPoison(-1)"
+          >
+            −
+          </button>
+          <span class="life-total" [title]="'Infect (poison) counters — lethal at ' + poisonLethal"
+            >☠ {{ me.poison }}</span
+          >
+          <button
+            type="button"
+            class="life-btn"
+            title="Add an infect counter"
+            (click)="bumpPoison(1)"
+          >
+            +
+          </button>
+        </div>
       </div>
     }
     <button type="button" class="reveal-toggle" [class.on]="allRevealed()" (click)="revealAll()">

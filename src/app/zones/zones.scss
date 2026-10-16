@@ -241,6 +241,20 @@ app-dialog {
   white-space: nowrap;
 }
 
+.opp-poison {
+  font-size: calc(1 * var(--u));
+  font-weight: 700;
+  color: #9be28a;
+  white-space: nowrap;
+
+  &.lethal {
+    color: #fff;
+    background: #b3261e;
+    border-radius: calc(0.4 * var(--u));
+    padding: 0 calc(0.4 * var(--u));
+  }
+}
+
 .opp-hand {
   display: flex;
   align-items: center;
@@ -404,6 +418,27 @@ button.mini {
   gap: calc(0.4 * var(--u));
   padding: calc(0.25 * var(--u)) calc(0.5 * var(--u));
   border-radius: calc(0.5 * var(--u));
+}
+
+.counters {
+  display: flex;
+  align-items: center;
+  gap: calc(0.5 * var(--u));
+}
+
+.life.poison {
+  color: #9be28a;
+
+  &.lethal {
+    color: #fff;
+    background: rgba(179, 38, 30, 0.85);
+    box-shadow: 0 0 calc(0.8 * var(--u)) rgba(255, 70, 60, 0.8);
+  }
+
+  .life-total {
+    font-size: calc(1.3 * var(--u));
+    min-width: calc(3.4 * var(--u));
+  }
 }
 
 .life-total {

@@ -12,7 +12,14 @@ import { Dialog } from '../shared/dialog/dialog';
 import { RevealPanel } from './reveal-panel/reveal-panel';
 import { REVEAL_COUNTS, RevealMode } from './reveal';
 import { ZoneStore } from './zone-store';
-import { OpenZoneKind, PlayerZones, ZONE_KINDS, ZoneCard, ZoneKind } from './zone.types';
+import {
+  OpenZoneKind,
+  POISON_LETHAL,
+  PlayerZones,
+  ZONE_KINDS,
+  ZoneCard,
+  ZoneKind,
+} from './zone.types';
 
 /** Screen anchor of the small right-click menu on my deck/graveyard/exile piles. */
 type ZoneMenu = { kind: Exclude<ZoneKind, 'hand'>; x: number; y: number };
@@ -322,6 +329,14 @@ export class Zones implements OnDestroy {
     const life = this.zones.mine().life;
     if (life === null) return;
     this.zones.setLife(Math.max(0, life + delta));
+  }
+
+  // ---------- infect / poison ----------
+
+  protected readonly poisonLethal = POISON_LETHAL;
+
+  protected bumpPoison(delta: number): void {
+    this.zones.setPoison(this.zones.mine().poison + delta);
   }
 
   // ---------- revealing my hand ----------

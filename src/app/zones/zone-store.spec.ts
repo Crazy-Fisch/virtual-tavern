@@ -181,12 +181,39 @@ describe('ZoneStore', () => {
   });
 
   it('takeFromTable logs zone-appropriate history lines', () => {
+    room.setWorldObject('card:t1', { name: 'Water Worm' });
     store.takeFromTable(tableCard('Water Worm'), 'hand');
     store.takeFromTable(tableCard('Water Worm'), 'graveyard');
     expect(room.actions).toEqual([
       'returned Water Worm to their hand',
       'put Water Worm into their graveyard',
     ]);
+  });
+
+  it('a local-only hand card dropped back on the hand leaves no history line', () => {
+    store.takeFromTable(tableCard('Water Worm'), 'hand');
+    expect(store.mine().hand.map((c) => c.name)).toEqual(['Water Worm']);
+    expect(room.actions).toEqual([]);
+  });
+
+  it('setPoison syncs through the life object, survives setLife and resets with the round', () => {
+    localStorage.clear();
+    TestBed.tick();
+    store.setPoison(3);
+    expect(store.mine().poison).toBe(0);
+    store.loadDeck([card('a', 'A')]);
+    store.setLife(20);
+    store.setPoison(3);
+    store.setLife(18);
+    expect(store.mine().poison).toBe(3);
+    expect(room.worldState()['life:user-1']?.data).toEqual({ life: 18, start: 20, poison: 3 });
+    store.setPoison(-2);
+    expect(store.mine().poison).toBe(0);
+    store.setPoison(10);
+    store.startNewRound();
+    TestBed.tick();
+    expect(store.mine().poison).toBe(0);
+    expect(store.mine().life).toBe(20);
   });
 
   it('playFromHand removes the card and returns it silently; unknown ids return null', () => {
