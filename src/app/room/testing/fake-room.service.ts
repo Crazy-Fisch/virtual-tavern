@@ -16,6 +16,7 @@ export class FakeRoomService {
   readonly batches: string[][] = [];
   private clock = 1;
 
+  readonly currentRoom = signal<{ id: string } | null>({ id: 'room-1' });
   readonly userId = signal<string | null>('user-1');
   readonly displayName = signal('Tim');
   readonly isRoomOwner = signal(true);
@@ -36,6 +37,13 @@ export class FakeRoomService {
 
   removeWorldObject(id: string): void {
     this._world.update(({ [id]: _, ...rest }) => rest);
+  }
+
+  removeWorldObjects(ids: readonly string[]): void {
+    const gone = new Set(ids);
+    this._world.update((w) =>
+      Object.fromEntries(Object.entries(w).filter(([id]) => !gone.has(id))),
+    );
   }
 
   sendAction(text: string): void {

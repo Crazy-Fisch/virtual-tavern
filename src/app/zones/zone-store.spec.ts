@@ -206,4 +206,56 @@ describe('ZoneStore', () => {
     expect(store.mine().graveyard.map((c) => c.name)).toEqual(['Water Worm']);
     expect(room.actions).toEqual(['put Water Worm into their graveyard']);
   });
+
+  it('startNewRound clears the table, bumps the round once and resets my side from my deck', () => {
+    localStorage.clear();
+    TestBed.tick();
+    store.loadDeck([card('a', 'A'), card('b', 'B'), card('c', 'C')]);
+    store.setLife(40);
+    store.setLife(31);
+    store.draw();
+    room.setWorldObject('card:t1', { name: 'Water Worm' });
+    room.setWorldObject('item:i1', { kind: 'die' });
+    room.setWorldObject('zone:user-2:deck', { ownerName: 'Bob', cards: [card('x', 'X')] });
+    room.actions.length = 0;
+
+    store.startNewRound();
+    TestBed.tick();
+
+    expect(store.round()).toBe(1);
+    expect(room.actions).toEqual(['New round started']);
+    expect(room.worldState()['card:t1']).toBeUndefined();
+    expect(room.worldState()['item:i1']).toBeUndefined();
+    expect(store.mine().hand).toEqual([]);
+    expect(store.mine().deck).toHaveLength(3);
+    expect(store.mine().life).toBe(40);
+    expect(store.others()).toHaveLength(1);
+  });
+
+  it('a round started by another client resets me; entering a room with a round does not', () => {
+    localStorage.clear();
+    store.loadDeck([card('a', 'A'), card('b', 'B')]);
+    TestBed.tick();
+    store.draw();
+    room.setWorldObject('round:current', { n: 1, startedBy: 'user-2' });
+    TestBed.tick();
+    expect(store.mine().hand).toEqual([]);
+    expect(store.mine().deck).toHaveLength(2);
+
+    room.currentRoom.set({ id: 'room-2' });
+    room.setWorldObject('round:current', { n: 5, startedBy: 'user-2' });
+    TestBed.tick();
+    store.draw();
+    TestBed.tick();
+    expect(store.mine().hand).toHaveLength(1);
+  });
+
+  it('without a remembered deck a new round sends me back to the deck picker', () => {
+    store.loadDeck([card('a', 'A')]);
+    localStorage.clear();
+    TestBed.tick();
+    store.startNewRound();
+    TestBed.tick();
+    expect(store.hasMine()).toBe(false);
+  });
 });

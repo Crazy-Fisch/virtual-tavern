@@ -113,6 +113,15 @@
     >
       Untap all
     </button>
+    <!-- Reset everyone's boards for a fresh game in this room (confirmed first). -->
+    <button
+      type="button"
+      class="new-round"
+      title="Start a new round for everyone in this room"
+      (click)="confirmingRound.set(true)"
+    >
+      New round
+    </button>
     <!-- The same controls reference the menu's Settings shows (hotkeys.md). -->
     <button
       type="button"
@@ -214,6 +223,19 @@
       {{ hm.card.revealed ? 'Hide from others' : 'Reveal to others' }}
     </button>
   </div>
+}
+
+@if (confirmingRound()) {
+  <app-dialog heading="Start a new round?" (close)="confirmingRound.set(false)">
+    <p class="round-note">
+      Every player's table, hand, graveyard and exile are cleared, decks are reshuffled and life
+      totals reset. Everyone stays in the room with their chosen deck.
+    </p>
+    <div class="round-actions">
+      <button type="button" class="secondary" (click)="confirmingRound.set(false)">Cancel</button>
+      <button type="button" class="primary" (click)="startNewRound()">Start new round</button>
+    </div>
+  </app-dialog>
 }
 
 @if (showHotkeys()) {

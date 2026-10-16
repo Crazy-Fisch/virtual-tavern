@@ -102,6 +102,8 @@ export class Zones implements OnDestroy {
   protected readonly choosingDeck = signal(false);
   /** Whether the in-game hotkey reference is open (hotkeys.md). */
   protected readonly showHotkeys = signal(false);
+  /** Whether the "start a new round" confirmation is open. */
+  protected readonly confirmingRound = signal(false);
   /** Deck picked but not yet confirmed — nothing is loaded until it is. */
   protected readonly pendingDeck = signal<Deck | null>(null);
   /** Horizontal shift (px) of the fanned hand, so a large hand can be scrolled. */
@@ -300,6 +302,14 @@ export class Zones implements OnDestroy {
     if (!this.zones.hasMine()) return false;
     const el = document.elementFromPoint(x, y);
     return el instanceof Element && !!el.closest(ZONE_SELECTORS[kind]);
+  }
+
+  // ---------- new round ----------
+
+  protected startNewRound(): void {
+    this.confirmingRound.set(false);
+    this.interactions.hoveredId.set(null);
+    this.zones.startNewRound();
   }
 
   // ---------- life ----------

@@ -1,9 +1,11 @@
-import { Injectable, computed, inject } from '@angular/core';
+import { Injectable, computed, effect, inject, untracked } from '@angular/core';
 import { RoomService } from '../room/room.service';
-import { CardState } from '../scene/card/card.types';
+import { CARD_PREFIX, CardState } from '../scene/card/card.types';
+import { ITEM_PREFIX } from '../scene/item/item.types';
 import {
   LIFE_PREFIX,
   PlayerZones,
+  ROUND_ID,
   ZONE_KINDS,
   ZONE_PREFIX,
   ZoneCard,
@@ -27,6 +29,8 @@ function parseCards(value: unknown): ZoneCard[] {
     return [card.revealed === true ? { ...base, revealed: true } : base];
   });
 }
+
+const ROUND_DECK_KEY = 'virtual-tavern.round-deck';
 
 function emptyZones(uid: string, name: string): PlayerZones {
   return { uid, name, hand: [], deck: [], graveyard: [], exile: [], life: null };
@@ -105,6 +109,34 @@ export class ZoneStore {
    */
   readonly hasMine = computed<boolean>(() => this.all().some((p) => p.uid === this.room.userId()));
 
+  /** The room's current round number (0 until someone starts a new round). */
+  readonly round = computed<number>(() => {
+    const n = this.room.worldState()[ROUND_ID]?.data['n'];
+    return typeof n === 'number' ? n : 0;
+  });
+
+  /** Room and round last reacted to, so entering a room never replays its old round marker. */
+  private seenRound: { roomId: string; n: number } | null = null;
+
+  constructor() {
+    effect(() => {
+      const room = this.room.currentRoom();
+      const n = this.round();
+      if (!room) {
+        this.seenRound = null;
+        return;
+      }
+      if (this.seenRound?.roomId !== room.id) {
+        this.seenRound = { roomId: room.id, n };
+        return;
+      }
+      if (n > this.seenRound.n) {
+        this.seenRound = { roomId: room.id, n };
+        untracked(() => this.resetForRound());
+      }
+    });
+  }
+
   /**
    * Sit down at the table: create my zones with the chosen deck (shuffled),
    * hand and graveyard empty. Re-loading a deck replaces my zones — a fresh
@@ -112,6 +144,7 @@ export class ZoneStore {
    */
   loadDeck(cards: ZoneCard[]): void {
     if (!this.room.userId()) return;
+    this.rememberDeck(cards);
     this.writeZones([
       ['hand', []],
       ['graveyard', []],
@@ -119,6 +152,80 @@ export class ZoneStore {
       ['deck', shuffled(cards)],
     ]);
     this.room.sendAction(`joined the game with a ${cards.length}-card deck`);
+  }
+
+  /**
+   * Start a new round in this room (any player may; the UI confirms first):
+   * the table's cards and items are cleared for everyone and the round marker
+   * is bumped, which makes every client — this one included — reset its own
+   * zones and life from the deck it chose (`resetForRound`). Room, players
+   * and decks stay.
+   */
+  startNewRound(): void {
+    const uid = this.room.userId();
+    if (!uid) return;
+    const table = Object.keys(this.room.worldState()).filter(
+      (id) => id.startsWith(CARD_PREFIX) || id.startsWith(ITEM_PREFIX),
+    );
+    this.room.removeWorldObjects(table);
+    this.room.setWorldObject(ROUND_ID, { n: this.round() + 1, startedBy: uid });
+    this.room.sendAction('New round started');
+  }
+
+  /**
+   * Reset MY side for a new round: a freshly shuffled copy of my chosen deck, empty
+   * hand/graveyard/exile, life back to my starting total. Silent (the starter logs
+   * once). Without a remembered deck (storage cleared) my zones are removed instead,
+   * which sends me back to the deck picker.
+   */
+  private resetForRound(): void {
+    const uid = this.room.userId();
+    if (!uid || !this.hasMine()) return;
+    const deck = this.recallDeck();
+    if (deck) {
+      this.writeZones([
+        ['hand', []],
+        ['graveyard', []],
+        ['exile', []],
+        ['deck', shuffled(deck.map((c) => ({ ...c, id: crypto.randomUUID() })))],
+      ]);
+      const start = this.room.worldState()[lifeId(uid)]?.data['start'];
+      if (typeof start === 'number') this.room.setWorldObject(lifeId(uid), { life: start, start });
+    } else {
+      this.room.removeWorldObjects([...ZONE_KINDS.map((k) => zoneId(uid, k)), lifeId(uid)]);
+    }
+  }
+
+  private deckKey(): string | null {
+    const roomId = this.room.currentRoom()?.id;
+    const uid = this.room.userId();
+    return roomId && uid ? `${ROUND_DECK_KEY}:${roomId}:${uid}` : null;
+  }
+
+  private rememberDeck(cards: ZoneCard[]): void {
+    const key = this.deckKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(cards.map(({ name, src }) => ({ name, src }))));
+    } catch {
+      // storage full or unavailable: a new round then falls back to the deck picker
+    }
+  }
+
+  private recallDeck(): ZoneCard[] | null {
+    const key = this.deckKey();
+    if (!key) return null;
+    try {
+      const raw = JSON.parse(localStorage.getItem(key) ?? 'null') as unknown;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      return raw.map((c: { name?: string; src?: string }) => ({
+        id: '',
+        name: typeof c.name === 'string' ? c.name : 'a card',
+        src: typeof c.src === 'string' ? c.src : '',
+      }));
+    } catch {
+      return null;
+    }
   }
 
   /** Keep my ownerName fresh on rejoin. Touches only zones that already exist. */
@@ -257,7 +364,11 @@ export class ZoneStore {
     const uid = this.room.userId();
     if (!uid) return;
     const first = this.mine().life === null;
-    this.room.setWorldObject(lifeId(uid), { life });
+    const start = this.room.worldState()[lifeId(uid)]?.data['start'];
+    this.room.setWorldObject(lifeId(uid), {
+      life,
+      start: typeof start === 'number' ? start : life,
+    });
     if (first) this.room.sendAction(`set their starting life to ${life}`);
   }
 

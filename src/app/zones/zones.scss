@@ -447,6 +447,7 @@ button.mini {
 
 .reveal-toggle,
 .untap-all,
+.new-round,
 .hotkeys-btn {
   @extend %panel;
   @extend %pill;
@@ -656,5 +657,27 @@ button.mini {
       touch-action: none;
       user-select: none;
     }
+  }
+}
+
+// ---------- new round confirmation ----------
+.round-note {
+  max-width: min(70vw, 420px);
+  margin: 0 0 1rem;
+}
+
+.round-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+
+  button {
+    @extend %panel;
+    @extend %pill;
+    padding: 0.4rem 1rem;
+  }
+
+  .primary {
+    background: #6c4cff;
   }
 }

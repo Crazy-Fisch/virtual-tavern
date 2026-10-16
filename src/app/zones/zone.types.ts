@@ -3,6 +3,9 @@ export const ZONE_PREFIX = 'zone:';
 /** World-object id prefix for a player's life total (`life:<uid>`, data `{ life }`). */
 export const LIFE_PREFIX = 'life:';
 
+/** World-object id of the room's round marker (data `{ n, startedBy }`); a higher `n` resets every player. */
+export const ROUND_ID = 'round:current';
+
 export type ZoneKind = 'hand' | 'deck' | 'graveyard' | 'exile';
 export const ZONE_KINDS: readonly ZoneKind[] = ['hand', 'deck', 'graveyard', 'exile'];
 

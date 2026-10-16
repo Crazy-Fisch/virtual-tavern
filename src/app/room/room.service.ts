@@ -251,6 +251,32 @@ export class RoomService {
     });
   }
 
+  /** Delete several shared world objects in ONE request (a new round clearing the table). */
+  removeWorldObjects(ids: readonly string[]): void {
+    const room = this._currentRoom();
+    if (!room || ids.length === 0) return;
+    const gone = new Set(ids);
+    for (const id of gone) this.beginWrite(id);
+    this._world.update((w) =>
+      Object.fromEntries(Object.entries(w).filter(([id]) => !gone.has(id))),
+    );
+    this.enqueue(async () => {
+      let error: unknown;
+      try {
+        ({ error } = await this.supabase.client
+          .from('world_objects')
+          .delete()
+          .eq('room_id', room.id)
+          .in('object_id', [...gone]));
+      } finally {
+        for (const id of gone) this.endWrite(id);
+      }
+      if (error && this._currentRoom()?.id === room.id) {
+        await this.resyncObjects(room.id, [...gone]);
+      }
+    });
+  }
+
   private beginWrite(id: string): void {
     this.pendingWrites.set(id, (this.pendingWrites.get(id) ?? 0) + 1);
   }
