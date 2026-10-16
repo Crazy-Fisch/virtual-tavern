@@ -1,0 +1,53 @@
+<form class="field" (submit)="$event.preventDefault(); submit()">
+  <input
+    type="search"
+    placeholder="Search cards — name or syntax like t:elf c:g"
+    autocomplete="off"
+    [value]="query()"
+    (input)="onInput($event)"
+  />
+  <button type="submit" class="go" [disabled]="busy()">Search</button>
+  @if (suggestions().length) {
+    <ul class="suggest">
+      @for (name of suggestions(); track name) {
+        <li>
+          <button type="button" (click)="pick(name)">{{ name }}</button>
+        </li>
+      }
+    </ul>
+  }
+</form>
+
+@if (error(); as e) {
+  <p class="note error">{{ e }}</p>
+} @else if (busy() && !results().length) {
+  <p class="note">Searching…</p>
+} @else if (searched() && !results().length) {
+  <p class="note">No cards matched.</p>
+}
+
+<div class="results">
+  @for (card of results(); track card.name) {
+    <figure class="hit">
+      @if (card.src) {
+        <img
+          [src]="card.src"
+          [alt]="card.name"
+          [title]="card.name"
+          crossorigin="anonymous"
+          loading="lazy"
+        />
+      } @else {
+        <span class="noimg">{{ card.name }}</span>
+      }
+      @if (inDeck(card); as n) {
+        <span class="have">×{{ n }} in deck</span>
+      }
+      <button type="button" class="add" (click)="add.emit(card)">+ Add</button>
+    </figure>
+  }
+</div>
+
+@if (more()) {
+  <button type="button" class="more" [disabled]="busy()" (click)="loadMore()">Load more</button>
+}

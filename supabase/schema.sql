@@ -103,6 +103,13 @@ create policy "decks_insert" on public.decks
     owner_id = auth.uid()
     and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
   );
+create policy "decks_update" on public.decks
+  for update to authenticated
+  using (owner_id = auth.uid())
+  with check (
+    owner_id = auth.uid()
+    and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
+  );
 create policy "decks_delete" on public.decks
   for delete to authenticated using (owner_id = auth.uid());
 

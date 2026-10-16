@@ -2,7 +2,8 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { CardPrintService } from '../carddb/card-print.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { BuiltInDecks } from './built-in-decks';
-import { Deck, DeckEntry, DeckPrint, isBuiltInDeck, printKey } from './deck.types';
+import { mergeEntries, withPrint } from './deck-edit';
+import { Deck, DeckEntry, DeckPrint, isBuiltInDeck } from './deck.types';
 import { parseDecklist } from './decklist-parser';
 
 /** Per-browser localStorage key holding a guest's decks (also the legacy key). */
@@ -22,17 +23,6 @@ function isDeck(value: unknown): value is Deck {
     Array.isArray(deck.list) &&
     deck.list.every(isEntry)
   );
-}
-
-function mergeEntries(list: DeckEntry[]): DeckEntry[] {
-  const merged = new Map<string, DeckEntry>();
-  for (const entry of list) {
-    const key = `${entry.card.toLowerCase()}|${printKey(entry.print)}`;
-    const existing = merged.get(key);
-    if (existing) existing.count += entry.count;
-    else merged.set(key, { ...entry });
-  }
-  return [...merged.values()];
 }
 
 function cleanName(name: string): string {
@@ -102,7 +92,47 @@ export class DeckStore {
     const parsed = parseDecklist(decklist);
     if (parsed.length === 0) return 'No cards found — paste a decklist like “4 Lightning Bolt”.';
     const list = await this.prints.resolveEntries(parsed);
+    return this.insert({ id: crypto.randomUUID(), name: cleanName(name), list });
+  }
+
+  /** Start a new deck (empty unless `list` is given) and return it, or the error message. */
+  async create(
+    name: string,
+    list: DeckEntry[] = [],
+  ): Promise<{ deck: Deck | null; error: string | null }> {
+    if (!this.available())
+      return { deck: null, error: 'Sign in (or continue as a guest) to keep decks.' };
     const deck: Deck = { id: crypto.randomUUID(), name: cleanName(name), list };
+    const error = await this.insert(deck);
+    return { deck: error ? null : deck, error };
+  }
+
+  /**
+   * Save an edited deck: its name and whole list, locally for guests or on the
+   * account. Returns an error message (the deck is rolled back to what it was)
+   * or null. Built-in decks cannot be saved.
+   */
+  async save(id: string, name: string, list: DeckEntry[]): Promise<string | null> {
+    if (isBuiltInDeck(id)) return 'Included decks can’t be edited — save a copy instead.';
+    const before = this._decks().find((d) => d.id === id);
+    if (!before) return 'This deck no longer exists.';
+    const next: Deck = { ...before, name: cleanName(name), list: mergeEntries(list) };
+    this._decks.update((decks) => decks.map((d) => (d.id === id ? next : d)));
+    if (!this.onAccount()) {
+      this.persistLocal();
+      return null;
+    }
+    const { data, error } = await this.supabase.client
+      .from('decks')
+      .update({ name: next.name, list: next.list })
+      .eq('id', id)
+      .select('id');
+    if (!error && data && data.length > 0) return null;
+    this._decks.update((decks) => decks.map((d) => (d.id === id ? before : d)));
+    return error?.message ?? 'The account refused the change (the decks update policy is missing).';
+  }
+
+  private async insert(deck: Deck): Promise<string | null> {
     // Optimistic append, rolled back if the account insert fails.
     this._decks.update((decks) => [...decks, deck]);
     if (this.onAccount()) {
@@ -142,16 +172,7 @@ export class DeckStore {
   setPrint(id: string, index: number, print: DeckPrint | undefined, count?: number): void {
     if (isBuiltInDeck(id)) return;
     const deck = this._decks().find((d) => d.id === id);
-    const entry = deck?.list[index];
-    if (!deck || !entry) return;
-    const moved = Math.min(Math.max(count ?? entry.count, 1), entry.count);
-    const rest = entry.count - moved;
-    const changed: DeckEntry = { card: entry.card, count: moved, ...(print ? { print } : {}) };
-    const list: DeckEntry[] = deck.list.flatMap((e, i) => {
-      if (i !== index) return [e];
-      return rest > 0 ? [{ ...entry, count: rest }, changed] : [changed];
-    });
-    this.replaceList(id, mergeEntries(list));
+    if (deck?.list[index]) this.replaceList(id, withPrint(deck.list, index, print, count));
   }
 
   /**

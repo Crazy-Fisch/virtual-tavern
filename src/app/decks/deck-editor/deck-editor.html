@@ -1,0 +1,207 @@
+<div class="editor">
+  <div class="bar">
+    <input
+      class="name"
+      type="text"
+      maxlength="60"
+      aria-label="Deck name"
+      [value]="name()"
+      [disabled]="readonly()"
+      (input)="onName($event)"
+    />
+    @if (readonly()) {
+      <span class="note">Included deck — read-only</span>
+      <button type="button" class="primary" (click)="saveCopy()">Save a copy to edit</button>
+    } @else {
+      <button type="button" class="primary" [disabled]="!dirty() || saving()" (click)="save()">
+        {{ saving() ? 'Saving…' : 'Save' }}
+      </button>
+      <button type="button" [disabled]="!dirty() || saving()" (click)="revert()">Revert</button>
+      <span class="note" [class.warn]="dirty()">{{ dirty() ? 'Unsaved changes' : 'Saved' }}</span>
+      @if (api.configured()) {
+        <button type="button" [class.on]="searching()" (click)="searching.set(!searching())">
+          {{ searching() ? 'Hide card search' : 'Add cards' }}
+        </button>
+      }
+    }
+    <span class="spacer"></span>
+    <button type="button" (click)="exporting.set(true)">Export</button>
+    <span class="seg" role="group" aria-label="View">
+      <button type="button" [class.on]="view() === 'list'" (click)="view.set('list')">List</button>
+      <button type="button" [class.on]="view() === 'grid'" (click)="view.set('grid')">Grid</button>
+    </span>
+  </div>
+
+  @if (error(); as e) {
+    <p class="error">{{ e }}</p>
+  }
+  @if (!api.configured()) {
+    <p class="note-line">
+      Add a card API (top right) to search cards, load types and mana values, and change artwork.
+    </p>
+  }
+
+  <div class="tools">
+    <label>
+      Sort
+      <select [value]="sort()" (change)="onSort($event)">
+        @for (s of sorts; track s.key) {
+          <option [value]="s.key" [selected]="s.key === sort()">{{ s.label }}</option>
+        }
+      </select>
+    </label>
+    <button
+      type="button"
+      class="dir"
+      [title]="descending() ? 'Descending' : 'Ascending'"
+      (click)="descending.set(!descending())"
+    >
+      {{ descending() ? '↓' : '↑' }}
+    </button>
+    <label>
+      Group by
+      <select [value]="group()" (change)="onGroup($event)">
+        @for (g of groups; track g.key) {
+          <option [value]="g.key" [selected]="g.key === group()">{{ g.label }}</option>
+        }
+      </select>
+    </label>
+    <input
+      class="text"
+      type="search"
+      placeholder="Filter by name or type"
+      aria-label="Filter by text"
+      [value]="filter().text"
+      (input)="onText($event)"
+    />
+    @if (filtering()) {
+      <button type="button" (click)="clearFilter()">Clear filters</button>
+    }
+  </div>
+
+  <div class="chips">
+    <span class="chip-row" role="group" aria-label="Color filter">
+      @for (c of colorLetters; track c) {
+        <button
+          type="button"
+          class="chip"
+          [class.on]="filter().colors.includes(c)"
+          [title]="colorNames[c]"
+          (click)="toggleColor(c)"
+        >
+          {{ c }}
+        </button>
+      }
+    </span>
+    <span class="chip-row" role="group" aria-label="Type filter">
+      @for (t of types; track t) {
+        <button
+          type="button"
+          class="chip wide"
+          [class.on]="filter().types.includes(t)"
+          (click)="toggleType(t)"
+        >
+          {{ t }}
+        </button>
+      }
+    </span>
+    <span class="chip-row" role="group" aria-label="Mana value filter">
+      @for (v of cmcValues; track v) {
+        <button
+          type="button"
+          class="chip"
+          [class.on]="filter().cmcs.includes(v)"
+          [title]="'Mana value ' + cmcLabel(v)"
+          (click)="toggleCmc(v)"
+        >
+          {{ cmcLabel(v) }}
+        </button>
+      }
+    </span>
+  </div>
+
+  <div class="summary">
+    <div class="counts">
+      <b>{{ total() }}</b> cards · {{ draft().length }} lines
+      @if (filtering()) {
+        · showing {{ shownCount() }}
+      }
+    </div>
+    <app-deck-curve [curve]="curve()" />
+  </div>
+
+  <div class="body">
+    @if (searching() && !readonly()) {
+      <aside class="search">
+        <app-deck-card-search [have]="have()" (add)="add($event)" />
+      </aside>
+    }
+    <div class="cards">
+      @for (section of sections(); track section.label) {
+        <section class="section">
+          @if (group() !== 'none') {
+            <h3>
+              {{ section.label }} <span class="n">{{ section.count }}</span>
+            </h3>
+          }
+          <app-deck-lines
+            [rows]="section.rows"
+            [mode]="view()"
+            [readonly]="readonly()"
+            [canArt]="api.configured()"
+            (delta)="change($event)"
+            (remove)="remove($event)"
+            (artwork)="artworkOf.set($event)"
+          />
+        </section>
+      } @empty {
+        <p class="empty">
+          @if (draft().length === 0) {
+            This deck has no cards yet.
+            @if (!readonly() && api.configured()) {
+              Use “Add cards” to search for some.
+            }
+          } @else {
+            No card matches the filters.
+          }
+        </p>
+      }
+    </div>
+  </div>
+</div>
+
+@if (artworkEntry(); as entry) {
+  <app-artwork-picker
+    [entry]="entry"
+    (chosen)="applyArtwork(artworkOf()!, $event)"
+    (close)="artworkOf.set(null)"
+  />
+}
+
+@if (exporting()) {
+  <app-dialog heading="Export decklist" (close)="exporting.set(false)">
+    <div class="export">
+      <textarea readonly rows="16" [value]="exportText()"></textarea>
+      <p class="hint">Cards with chosen artwork export as “4 Forest (SET) 123”.</p>
+      <div class="actions">
+        <button type="button" class="primary" (click)="copyExport()">{{ copyLabel() }}</button>
+        <button type="button" (click)="download()">Download .txt</button>
+      </div>
+    </div>
+  </app-dialog>
+}
+
+@if (confirmLeave()) {
+  <app-dialog heading="Unsaved changes" (close)="confirmLeave.set(false)">
+    <div class="export">
+      <p class="hint">This deck has changes that are not saved yet.</p>
+      <div class="actions">
+        <button type="button" class="primary" (click)="saveAndLeave()">Save and leave</button>
+        <button type="button" class="danger" (click)="confirmLeave.set(false); close.emit()">
+          Discard
+        </button>
+        <button type="button" (click)="confirmLeave.set(false)">Keep editing</button>
+      </div>
+    </div>
+  </app-dialog>
+}

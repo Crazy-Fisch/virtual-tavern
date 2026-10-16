@@ -235,108 +235,26 @@
   }
 }
 
-// ---------- full-page deck view ----------
-.deck-view {
-  padding: 1.25rem;
-}
-
+// ---------- deck editor page ----------
 .view-note {
-  margin: 0 0 1rem;
+  margin: 1rem 1.25rem 0;
   color: #d9b96a;
   font-size: 0.85rem;
 }
 
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.9rem;
+.new-deck {
+  margin-left: 0.6rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #2e2e3a;
+  border-radius: 0.5rem;
+  background: #1b1b24;
+  color: #eee;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
 
-  .empty {
-    color: #999;
-  }
-}
-
-.db-card {
-  position: relative;
-  margin: 0;
-  aspect-ratio: 63 / 88;
-  border-radius: 8px;
-  overflow: hidden;
-  // White placeholder while the image loads / when the card has no art.
-  background: #f2f2f2;
-
-  img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .art-btn {
-    position: absolute;
-    top: 0.4rem;
-    right: 0.4rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 0.4rem;
-    background: rgba(18, 18, 26, 0.85);
-    color: #eee;
-    font: inherit;
-    font-size: 0.7rem;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s;
-
-    &:hover {
-      border-color: #6c4cff;
-    }
-  }
-
-  &:hover .art-btn,
-  .art-btn:focus-visible {
-    opacity: 1;
-  }
-
-  @media (hover: none) {
-    .art-btn {
-      opacity: 1;
-    }
-  }
-
-  // Pink placeholder for a name the card database doesn't know at all.
-  &.missing {
-    background: #ff9ecb;
-  }
-
-  figcaption {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    justify-content: space-between;
-    gap: 0.4rem;
-    padding: 0.35rem 0.45rem;
-    font-size: 0.75rem;
-    color: #fff;
-    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85));
-
-    .cname {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .ccount {
-      color: #cbbcff;
-      flex: none;
-    }
-  }
-
-  // Placeholder tiles keep their caption dark for contrast on the light bg.
-  &.missing figcaption,
-  &.noimg figcaption {
-    color: #eee;
+  &:hover {
+    border-color: #6c4cff;
   }
 }
 

@@ -1,0 +1,105 @@
+@if (mode() === 'list') {
+  <ul class="list">
+    @for (row of rows(); track row.index) {
+      <li class="row" [class.unknown]="!row.info">
+        <span class="qty">
+          @if (!readonly()) {
+            <button
+              type="button"
+              aria-label="One less"
+              (click)="delta.emit({ index: row.index, delta: -1 })"
+            >
+              −
+            </button>
+          }
+          <b>{{ row.entry.count }}</b>
+          @if (!readonly()) {
+            <button
+              type="button"
+              aria-label="One more"
+              (click)="delta.emit({ index: row.index, delta: 1 })"
+            >
+              +
+            </button>
+          }
+        </span>
+        <span class="name">{{ row.entry.card }}</span>
+        @if (printLabel(row); as label) {
+          <span class="print" title="Chosen artwork">{{ label }}</span>
+        }
+        <span class="cost">{{ row.info?.manaCost }}</span>
+        <span class="type">{{ row.info?.typeLine }}</span>
+        <span class="rarity" [attr.data-rarity]="row.info?.rarity">{{ row.info?.rarity }}</span>
+        @if (canArt() && !readonly()) {
+          <button type="button" class="art" (click)="artwork.emit(row.index)">Artwork</button>
+        }
+        @if (!readonly()) {
+          <button
+            type="button"
+            class="del"
+            aria-label="Remove card"
+            (click)="remove.emit(row.index)"
+          >
+            ×
+          </button>
+        }
+        @if (row.src) {
+          <img
+            class="peek"
+            [src]="row.src"
+            [alt]="row.entry.card"
+            crossorigin="anonymous"
+            loading="lazy"
+          />
+        }
+      </li>
+    }
+  </ul>
+} @else {
+  <div class="grid">
+    @for (row of rows(); track row.index) {
+      <figure class="tile" [class.noimg]="!row.src">
+        @if (row.src) {
+          <img
+            [src]="row.src"
+            [alt]="row.entry.card"
+            [title]="row.entry.card"
+            crossorigin="anonymous"
+            loading="lazy"
+          />
+        }
+        <span class="badge">×{{ row.entry.count }}</span>
+        @if (!readonly()) {
+          <span class="tools">
+            <button
+              type="button"
+              aria-label="One less"
+              (click)="delta.emit({ index: row.index, delta: -1 })"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              aria-label="One more"
+              (click)="delta.emit({ index: row.index, delta: 1 })"
+            >
+              +
+            </button>
+            @if (canArt()) {
+              <button type="button" (click)="artwork.emit(row.index)">Artwork</button>
+            }
+            <button type="button" aria-label="Remove card" (click)="remove.emit(row.index)">
+              ×
+            </button>
+          </span>
+        }
+        <figcaption>
+          <span class="cname">{{ row.entry.card }}</span>
+          @if (printLabel(row); as label) {
+            <span class="print">{{ label }}</span>
+          }
+        </figcaption>
+      </figure>
+    }
+  </div>
+}

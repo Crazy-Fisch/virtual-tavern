@@ -10,15 +10,14 @@ import {
 } from '@angular/core';
 import { CardPrint, CardPrintService, toDeckPrint } from '../../carddb/card-print.service';
 import { Dialog } from '../../shared/dialog/dialog';
-import { DeckStore } from '../deck-store';
-import { DeckEntry } from '../deck.types';
+import { DeckEntry, DeckPrint } from '../deck.types';
 
 /**
  * "Change artwork" for one deck line: lists the card's prints from the card API
  * as a thumbnail grid (set, number, language), filters them (English only, hide
- * full-art / textless) and saves the clicked print to that line through
- * `DeckStore.setPrint`. A line of several copies can be split, so one deck can
- * hold e.g. basic lands of different arts.
+ * full-art / textless) and reports the clicked print (`chosen`) for the deck
+ * editor to apply to that line. A line of several copies can be split, so one
+ * deck can hold e.g. basic lands of different arts.
  */
 @Component({
   selector: 'app-artwork-picker',
@@ -29,12 +28,11 @@ import { DeckEntry } from '../deck.types';
 })
 export class ArtworkPicker {
   private readonly prints = inject(CardPrintService);
-  private readonly store = inject(DeckStore);
 
-  readonly deckId = input.required<string>();
-  readonly index = input.required<number>();
   readonly entry = input.required<DeckEntry>();
   readonly close = output<void>();
+  /** The picked print (undefined = back to the default art) and how many copies get it. */
+  readonly chosen = output<{ print: DeckPrint | undefined; count: number }>();
 
   protected readonly all = signal<CardPrint[]>([]);
   protected readonly loading = signal(true);
@@ -102,12 +100,10 @@ export class ArtworkPicker {
   }
 
   protected choose(print: CardPrint): void {
-    this.store.setPrint(this.deckId(), this.index(), toDeckPrint(print), this.applyTo());
-    this.close.emit();
+    this.chosen.emit({ print: toDeckPrint(print), count: this.applyTo() });
   }
 
   protected reset(): void {
-    this.store.setPrint(this.deckId(), this.index(), undefined, this.applyTo());
-    this.close.emit();
+    this.chosen.emit({ print: undefined, count: this.applyTo() });
   }
 }

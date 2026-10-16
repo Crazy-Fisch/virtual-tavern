@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { DeckEntry, DeckPrint } from '../decks/deck.types';
 import { CardApiService } from './card-api.service';
 import { CardDatabaseService, facesOf } from './card-database.service';
+import { ApiInfoCard, CardInfo, infoKey, infoOf } from './card-info';
 
 /** One printing of a card as offered by the artwork picker. */
 export type CardPrint = {
@@ -23,7 +24,7 @@ export type CardPrint = {
   promo: boolean;
 };
 
-type ApiCard = {
+type ApiCard = ApiInfoCard & {
   id?: string;
   name?: string;
   set?: string;
@@ -39,6 +40,7 @@ type ApiCard = {
   card_faces?: { image_uris?: { normal?: string } }[];
 };
 type ApiList = { data?: ApiCard[]; has_more?: boolean; next_page?: string };
+type ApiNames = { data?: string[] };
 type ApiCollection = { data?: ApiCard[]; not_found?: Identifier[] };
 type Identifier = { set?: string; collector_number?: string; name?: string };
 
@@ -146,6 +148,116 @@ export class CardPrintService {
     }
     this.cache.set(key, found);
     return found;
+  }
+
+  /**
+   * Names the API completes `query` to (`/cards/autocomplete`, at most 20).
+   * Empty below two characters; throws on a network or API failure.
+   */
+  async autocomplete(query: string, signal?: AbortSignal): Promise<string[]> {
+    const q = query.trim();
+    if (q.length < 2) return [];
+    const base = this.requireBase();
+    const key = `auto|${base}|${q.toLowerCase()}`;
+    const cached = this.cache.get(key) as string[] | undefined;
+    if (cached) return cached;
+    const body = await this.getJson<ApiNames>(
+      `${base}/cards/autocomplete?q=${encodeURIComponent(q)}`,
+      signal,
+      true,
+    );
+    const names = body?.data ?? [];
+    this.cache.set(key, names);
+    return names;
+  }
+
+  /**
+   * One page (up to 175) of `/cards/search` results, one card per name, with
+   * `more` set when a further page exists. A query nothing matched yields an
+   * empty page; throws on a network or API failure.
+   */
+  async searchCards(
+    query: string,
+    page = 1,
+    signal?: AbortSignal,
+  ): Promise<{ cards: CardInfo[]; more: boolean }> {
+    const base = this.requireBase();
+    const q = query.trim();
+    const key = `cards|${base}|${page}|${q.toLowerCase()}`;
+    const cached = this.cache.get(key) as { cards: CardInfo[]; more: boolean } | undefined;
+    if (cached) return cached;
+    const url = `${base}/cards/search?q=${encodeURIComponent(q)}&unique=cards&order=name&page=${page}`;
+    const body = await this.getJson<ApiList>(url, signal, true);
+    const cards = (body?.data ?? []).map(infoOf).filter((c): c is CardInfo => !!c);
+    const result = { cards, more: !!body?.has_more };
+    this.cache.set(key, result);
+    return result;
+  }
+
+  /**
+   * Type, cost, colours and rarity of the named cards, keyed by `infoKey`
+   * (front-face name). Names are resolved in `/cards/collection` batches, or one
+   * by one through `/cards/named` when the API has no collection endpoint; a
+   * name the API does not know is absent. Throws on a network or API failure.
+   */
+  async cardInfos(names: string[], signal?: AbortSignal): Promise<Map<string, CardInfo>> {
+    const base = this.requireBase();
+    const out = new Map<string, CardInfo>();
+    const missing = new Map<string, string>();
+    for (const name of names) {
+      const key = infoKey(name);
+      const hit = this.cache.get(`info|${base}|${key}`) as CardInfo | null | undefined;
+      if (hit) out.set(key, hit);
+      else if (hit === undefined) missing.set(key, name);
+    }
+    const keys = [...missing.keys()];
+    for (let i = 0; i < keys.length; i += COLLECTION_BATCH) {
+      const batch = keys.slice(i, i + COLLECTION_BATCH);
+      const found = await this.infoBatch(
+        base,
+        batch.map((k) => missing.get(k)!),
+        signal,
+      );
+      for (const key of batch) {
+        const info = found.get(key) ?? null;
+        this.cache.set(`info|${base}|${key}`, info);
+        if (info) out.set(key, info);
+      }
+    }
+    return out;
+  }
+
+  private async infoBatch(
+    base: string,
+    names: string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, CardInfo>> {
+    const out = new Map<string, CardInfo>();
+    const cards = await this.collection(
+      base,
+      names.map((name) => ({ name })),
+      signal,
+    ).catch((err) => {
+      if (signal?.aborted) throw err;
+      return null;
+    });
+    if (cards) {
+      for (const card of cards) {
+        const info = infoOf(card);
+        if (info) out.set(infoKey(info.name), info);
+      }
+      return out;
+    }
+    for (const name of names) {
+      const card = await this.getJson<ApiCard>(
+        `${base}/cards/named?exact=${encodeURIComponent(name)}`,
+        signal,
+        true,
+      );
+      const info = card ? infoOf(card) : null;
+      if (info) out.set(infoKey(name), info);
+    }
+    return out;
   }
 
   /**

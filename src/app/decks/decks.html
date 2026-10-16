@@ -1,7 +1,7 @@
 <div class="page">
   <header class="bar">
     @if (viewing()) {
-      <button type="button" class="back" (click)="closeView()">← Back</button>
+      <button type="button" class="back" (click)="back()">← Back</button>
     } @else {
       <a class="back" routerLink="/">← Menu</a>
     }
@@ -18,50 +18,12 @@
   </header>
 
   @if (viewDeck(); as deck) {
-    <!-- Full-page deck view: every card in the list, images from the card database. -->
-    <div class="deck-view">
-      @if (!db.ready()) {
-        <p class="view-note">
-          The card database isn’t ready yet — some cards may show as placeholders.
-        </p>
-      }
-      @if (isBuiltIn(deck.id)) {
-        <p class="view-note">Included decks can’t be edited, so their artwork can’t be changed.</p>
-      }
-      <div class="card-grid">
-        @for (entry of deck.list; track $index) {
-          @let rec = resolve(entry.card);
-          @let art = srcOf(entry);
-          <figure class="db-card" [class.missing]="!rec && !art" [class.noimg]="rec && !art">
-            @if (art) {
-              <img
-                [src]="art"
-                [alt]="rec?.name ?? entry.card"
-                [title]="rec?.name ?? entry.card"
-                crossorigin="anonymous"
-                loading="lazy"
-              />
-            }
-            @if (!isBuiltIn(deck.id) && api.configured()) {
-              <button
-                type="button"
-                class="art-btn"
-                title="Change artwork"
-                (click)="artworkOf.set($index)"
-              >
-                Change artwork
-              </button>
-            }
-            <figcaption>
-              <span class="cname">{{ entry.card }}</span>
-              <span class="ccount">×{{ entry.count }}</span>
-            </figcaption>
-          </figure>
-        } @empty {
-          <p class="empty">This deck has no cards.</p>
-        }
-      </div>
-    </div>
+    @if (!db.ready()) {
+      <p class="view-note">
+        The card database isn’t ready yet — some cards may show as placeholders.
+      </p>
+    }
+    <app-deck-editor [deck]="deck" (close)="closeView()" (copied)="openView($event)" />
   } @else {
     <div class="content">
       <section class="import">
@@ -83,7 +45,9 @@
       </section>
 
       <section class="overview">
-        <h2>Your decks</h2>
+        <h2>
+          Your decks <button type="button" class="new-deck" (click)="newDeck()">+ New deck</button>
+        </h2>
         <div class="grid">
           @for (d of store.decks(); track d.id) {
             <!-- Decks shipped with the app sit alongside the player's own and
@@ -124,15 +88,6 @@
     </div>
   }
 </div>
-
-@if (artworkEntry(); as entry) {
-  <app-artwork-picker
-    [deckId]="viewDeck()!.id"
-    [index]="artworkOf()!"
-    [entry]="entry"
-    (close)="artworkOf.set(null)"
-  />
-}
 
 @if (renaming(); as r) {
   <app-dialog heading="Rename deck" (close)="renaming.set(null)">

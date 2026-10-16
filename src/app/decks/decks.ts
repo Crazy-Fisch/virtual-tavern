@@ -1,9 +1,9 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CardApiService } from '../carddb/card-api.service';
-import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
+import { CardDatabaseService } from '../carddb/card-database.service';
 import { Dialog } from '../shared/dialog/dialog';
-import { ArtworkPicker } from './artwork-picker/artwork-picker';
+import { DeckEditor } from './deck-editor/deck-editor';
 import { DeckStore } from './deck-store';
 import { Deck, DeckEntry, deckSize, entrySrc, isBuiltInDeck } from './deck.types';
 
@@ -11,17 +11,17 @@ import { Deck, DeckEntry, deckSize, entrySrc, isBuiltInDeck } from './deck.types
 type DeckMenu = { deck: Deck; x: number; y: number };
 
 /**
- * The deck screen: import a pasted decklist (phase 1 — no editing) and see the
+ * The deck screen: import a pasted decklist or start an empty deck and see the
  * deck overview, a grid of squares (each backgrounded by its first card's art)
  * with the deck name inside and the card count below. Right-clicking a tile
  * opens a context menu to rename or delete the deck; left-clicking opens the
- * full-page deck view — a scrollable grid of every card resolved against the
- * card database. Also surfaces the card database status, since imports resolve
- * card names against it when a deck is later loaded into a game.
+ * full-page deck editor (`DeckEditor`). Also surfaces the card database status,
+ * since imports resolve card names against it when a deck is later loaded into
+ * a game.
  */
 @Component({
   selector: 'app-decks',
-  imports: [RouterLink, Dialog, ArtworkPicker],
+  imports: [RouterLink, Dialog, DeckEditor],
   templateUrl: './decks.html',
   styleUrl: './decks.scss',
   standalone: true,
@@ -39,19 +39,14 @@ export class Decks {
   protected readonly list = signal('');
   protected readonly error = signal<string | null>(null);
   protected readonly menu = signal<DeckMenu | null>(null);
-  /** The deck whose full-page card view is open, or null for the overview. */
+  /** The deck whose full-page editor is open, or null for the overview. */
   protected readonly viewing = signal<Deck | null>(null);
-  /** The deck as the store holds it now, so a changed artwork shows at once. */
+  /** The deck as the store holds it now, so a saved edit shows at once. */
   protected readonly viewDeck = computed(() => {
     const open = this.viewing();
     return open ? (this.store.decks().find((d) => d.id === open.id) ?? open) : null;
   });
-  /** Index of the deck line whose artwork picker is open, or null when closed. */
-  protected readonly artworkOf = signal<number | null>(null);
-  protected readonly artworkEntry = computed(() => {
-    const index = this.artworkOf();
-    return index === null ? null : (this.viewDeck()?.list[index] ?? null);
-  });
+  protected readonly editor = viewChild(DeckEditor);
   /** In-flight rename: the deck plus the edited name text, or null when closed. */
   protected readonly renaming = signal<{ id: string; name: string } | null>(null);
   /** The card-API modal's text field, or null while the modal is closed. */
@@ -90,11 +85,6 @@ export class Decks {
     this.list.set('');
   }
 
-  /** Resolve a decklist name to its database record (undefined = unknown card). */
-  protected resolve(name: string): CardRecord | undefined {
-    return this.db.lookup(name);
-  }
-
   /** Image of a deck line: its chosen print, else the database's default art. */
   protected srcOf(entry: DeckEntry): string {
     return entrySrc(entry, this.db.lookup(entry.card)?.src);
@@ -112,8 +102,20 @@ export class Decks {
   }
 
   protected closeView(): void {
-    this.artworkOf.set(null);
     this.viewing.set(null);
+  }
+
+  /** Header back button: the editor asks about unsaved changes first. */
+  protected back(): void {
+    const editor = this.editor();
+    if (editor) editor.requestClose();
+    else this.closeView();
+  }
+
+  protected async newDeck(): Promise<void> {
+    const { deck, error } = await this.store.create('New deck');
+    this.error.set(error);
+    if (deck) this.openView(deck);
   }
 
   protected openMenu(event: MouseEvent, deck: Deck): void {

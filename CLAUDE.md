@@ -302,14 +302,24 @@ account) and false only when fully signed out; `decksGuard` and the menu's Decks
 that. A session-following `effect` picks the store: a guest reads local decks, an account loads
 its cloud decks and **`syncLocalToAccount`** uploads any local guest decks into the account
 once (so a guest who registers keeps what they built), then clears local. `Deck` = id + name +
-`{card, count}` list; phase 1 import-only via `parseDecklist` (Arena/Moxfield/Archidekt/MTGO/
-plain); import/rename/remove are optimistic with rollback. `decks()` is the player's own decks
+`{card, count, print?}` list; imported via `parseDecklist` (Arena/Moxfield/Archidekt/MTGO/
+plain) or built in the deck editor; import/rename/remove are optimistic with rollback, and
+`save(id, name, list)` / `create()` back the editor (`save` needs the `decks_update` policy,
+`migration-2026-10-16-decks-update.sql`, and rolls back with a message without it). `decks()` is the player's own decks
 with the **shipped** ones in front (see below); `ownDecks()` is the writable half, and it is
 what localStorage/the `decks` table hold. The Decks screen (`decks.ts`) shows
 each deck as a square backed by a cutout of its first card's art (right-click → rename/delete),
-and left-clicking a deck opens a full-page **deck view** — a scrollable grid of every card,
-images resolved via the card database (white placeholder while loading, pink for an unknown
-name); "← Back" returns to the overview.
+and left-clicking a deck opens the full-page **deck editor** (`decks/deck-editor/`): a draft
+list with Save/Revert (Save writes through `DeckStore.save`; leaving with changes asks first),
+name edit, card search (`deck-card-search`: `/cards/autocomplete` + `/cards/search` through
+`CardPrintService`), +/− counts, per-line artwork picker, list or image-grid view (`deck-lines`),
+sort (name/mana value/color/type/rarity), group (type/color/mana value), filters (text, color,
+type, mana value), group and total counts, a mana curve (`deck-curve`) and decklist export with
+`(SET) number`. Type/cost/rarity come from `CardPrintService.cardInfos` (`/cards/collection` by
+name, cached; `carddb/card-info.ts`), the pure sort/group/filter logic is `deck-view.ts`, list
+edits are `deck-edit.ts`. The deck model is one flat list, so there are no sideboard/commander
+sections. Included decks open read-only with "Save a copy to edit". "← Back" returns to the
+overview; "+ New deck" creates an empty deck and opens it.
 **Default decks** (`designdocs/defaultdecks.md`) are plain decklist `.txt` files in
 `public/decks/`. Static hosting has no directory listing, so
 `scripts/generate-deck-manifest.mjs` writes `public/decks/index.json` from that folder (wired
@@ -426,8 +436,8 @@ with a constructor call only because its spawn `await`s the model load before to
   it replaces the settings dialog rather than stacking a second modal, with a Back button),
   and Sign out.
 - `'decks'` → `Decks` (`src/app/decks/`, guarded by `decksGuard` — only fully signed-out
-  visitors are redirected to `/`): deck screen — import a pasted decklist, deck-square overview
-  (left-click to open the full-page deck view, right-click to rename/delete), card database
+  visitors are redirected to `/`): deck screen — import a pasted decklist or start an empty deck, deck-square overview
+  (left-click to open the full-page deck editor, right-click to rename/delete), card database
   status line, and the card-API deposit button + modal (legal.md).
 - `'tavern'` → `Tavern` (`src/app/tavern/`): hosts `Scene` + `Chat`. Guarded by `tavernGuard`
   (`tavern-guard.ts`, an async `CanActivateFn`): if no room is joined it first tries

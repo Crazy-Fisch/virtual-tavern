@@ -1,0 +1,160 @@
+:host {
+  display: block;
+}
+
+.field {
+  position: relative;
+  display: flex;
+  gap: 0.4rem;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #2e2e3a;
+    border-radius: 0.5rem;
+    background: #1b1b24;
+    color: #eee;
+    font: inherit;
+
+    &:focus {
+      outline: none;
+      border-color: #6c4cff;
+    }
+  }
+}
+
+.go,
+.more {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #6c4cff;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background: #7d61ff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.more {
+  display: block;
+  margin: 0.8rem auto 0;
+}
+
+.suggest {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.2rem 0 0;
+  padding: 0.2rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid #2e2e3a;
+  border-radius: 0.5rem;
+  background: #1b1b24;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+
+  button {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: none;
+    border-radius: 0.3rem;
+    background: none;
+    color: #eee;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: #2a2540;
+    }
+  }
+}
+
+.note {
+  margin: 0.7rem 0 0;
+  color: #999;
+  font-size: 0.85rem;
+
+  &.error {
+    color: #ff8a8a;
+  }
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.hit {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 63 / 88;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #2a2a36;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .noimg {
+    display: block;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .have {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.3rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.35rem;
+    background: rgba(18, 18, 26, 0.9);
+    font-size: 0.7rem;
+  }
+
+  .add {
+    position: absolute;
+    left: 0.3rem;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    padding: 0.25rem;
+    border: 1px solid #6c4cff;
+    border-radius: 0.4rem;
+    background: rgba(108, 76, 255, 0.92);
+    color: #fff;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  &:hover .add,
+  .add:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .add {
+      opacity: 1;
+    }
+  }
+}

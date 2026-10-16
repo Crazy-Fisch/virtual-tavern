@@ -92,3 +92,9 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 ## Done: artwork picker (t6)
 - `ArtworkPicker` (decks/artwork-picker/): dialog with a print grid (set code, #, language, set name, full-art/textless/borderless/promo tag) from `CardPrintService.listPrints(name, signal, allLanguages)`; filters English only (reloads with `lang:any` when off) and hide full-art/textless; "Apply to N of M copies" splits a line; "Use default art" clears. Saves via `DeckStore.setPrint`. `CardPrint.lang` added.
 - Decks deck view: "Change artwork" button per card tile (own decks with a card API only; built-in decks show a note). `viewDeck` computed follows the store so a change shows at once; in game `confirmDeck` already reads `entrySrc`, so each line's art reaches the hand and table.
+
+## Done: deck editor (t7)
+- Decks screen deck view is now `DeckEditor` (decks/deck-editor/, children deck-lines, deck-card-search, deck-curve; artwork picker reused, it now emits `chosen` instead of writing the store). Draft + Save/Revert; `DeckStore.save(id,name,list)` (rolls back, error message) and `create(name,list)`; `deck-edit.ts` = pure list edits + `exportDecklist`; `deck-view.ts` = pure sort/group/filter/curve; `carddb/card-info.ts` + `CardPrintService.autocomplete/searchCards/cardInfos` (type, cmc, colors, rarity fetched by name, cached; the compact index is untouched).
+- No sideboard/commander in the deck model, so no such sections. Included decks read-only + "Save a copy".
+- The `decks` table had NO update policy (rename/setPrint were silently refused for accounts): `supabase/migration-2026-10-16-decks-update.sql` + schema.sql add it; it must be run in the Supabase SQL editor. Guests (localStorage) are unaffected.
+- Initial bundle warning budget raised to 1.45MB.

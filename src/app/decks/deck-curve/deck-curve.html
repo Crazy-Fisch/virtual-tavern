@@ -1,0 +1,9 @@
+<div class="curve" title="Mana curve (lands excluded)">
+  @for (bar of bars(); track bar.label) {
+    <div class="col">
+      <span class="count">{{ bar.count || '' }}</span>
+      <span class="bar" [style.height.%]="bar.height"></span>
+      <span class="label">{{ bar.label }}</span>
+    </div>
+  }
+</div>
