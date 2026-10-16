@@ -13,7 +13,7 @@
   overflow: hidden;
   pointer-events: none;
   font:
-    calc(0.75 * var(--u)) / 1.4 'Inter',
+    max(12px, calc(0.75 * var(--u))) / 1.4 'Inter',
     system-ui,
     sans-serif;
   color: #eee;
@@ -44,6 +44,7 @@
   &:hover {
     color: #fff;
     border-color: rgba(255, 255, 255, 0.5);
+    background-color: rgba(60, 54, 100, 0.9);
   }
 }
 
@@ -283,7 +284,7 @@ app-dialog {
 
 .opp-more {
   margin-left: calc(0.5 * var(--u));
-  font-size: calc(0.8 * var(--u));
+  font-size: max(11px, calc(0.8 * var(--u)));
   color: #ccc;
 }
 
@@ -297,14 +298,14 @@ app-dialog {
   display: flex;
   align-items: center;
   gap: calc(0.2 * var(--u));
-  height: calc(2.2 * var(--u));
+  height: max(26px, calc(2.2 * var(--u)));
   padding: 0 calc(0.5 * var(--u));
   border-radius: calc(0.3 * var(--u));
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.05);
   color: #ddd;
   font: inherit;
-  font-size: calc(0.85 * var(--u));
+  font-size: max(12px, calc(0.85 * var(--u)));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -348,7 +349,7 @@ button.mini {
   z-index: 3;
   padding: calc(0.2 * var(--u)) calc(0.6 * var(--u));
   border-radius: calc(0.4 * var(--u));
-  font-size: calc(0.9 * var(--u));
+  font-size: max(12px, calc(0.9 * var(--u)));
   font-weight: 700;
   color: #cfc4ff;
 }
@@ -449,8 +450,8 @@ button.mini {
 }
 
 .life-btn {
-  width: calc(2.2 * var(--u));
-  height: calc(2.2 * var(--u));
+  width: max(28px, calc(2.2 * var(--u)));
+  height: max(28px, calc(2.2 * var(--u)));
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
@@ -462,6 +463,10 @@ button.mini {
 
   &:hover {
     background: rgba(255, 255, 255, 0.24);
+  }
+
+  &:active {
+    background: rgba(255, 255, 255, 0.34);
   }
 }
 
@@ -486,8 +491,9 @@ button.mini {
 .hotkeys-btn {
   @extend %panel;
   @extend %pill;
+  min-height: 28px;
   padding: calc(0.35 * var(--u)) calc(0.8 * var(--u));
-  font-size: calc(0.85 * var(--u));
+  font-size: max(12px, calc(0.85 * var(--u)));
 
   &.on {
     background: #2f6ea0;
@@ -519,7 +525,8 @@ button.mini {
   justify-content: center;
   overflow: hidden;
 
-  &:hover {
+  &:hover,
+  &:focus-visible {
     border-color: rgba(255, 255, 255, 0.6);
   }
 
@@ -530,8 +537,8 @@ button.mini {
   }
 
   .label {
-    font-size: calc(0.95 * var(--u));
-    color: #bbb;
+    font-size: max(11px, calc(0.95 * var(--u)));
+    color: #c4c4cc;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   }
 }
@@ -585,7 +592,7 @@ button.mini {
   font-size: 14px;
 
   button {
-    padding: 7px 10px;
+    padding: 9px 12px;
     border: none;
     border-radius: 5px;
     background: none;
@@ -618,7 +625,7 @@ button.mini {
 
   button {
     flex: 1;
-    padding: 4px 0;
+    padding: 6px 0;
     border-radius: 4px;
     background: #35355a;
     color: #ddd;
@@ -648,7 +655,7 @@ button.mini {
 
   button {
     flex: 1;
-    padding: 3px 6px;
+    padding: 5px 8px;
     border-radius: 4px;
     background: #35355a;
     color: #ddd;
@@ -709,11 +716,13 @@ button.mini {
   button {
     @extend %panel;
     @extend %pill;
-    padding: 0.4rem 1rem;
+    padding: 0.5rem 1rem;
+    font-size: 14px;
   }
 
   .primary {
     background: #6c4cff;
+    color: #fff;
   }
 }
 

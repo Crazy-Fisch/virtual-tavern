@@ -32,7 +32,7 @@
   }
 
   .reset {
-    padding: 0.3rem 0.65rem;
+    padding: 0.4rem 0.75rem;
     border: 1px solid #2e2e3a;
     border-radius: 0.5rem;
     background: #1b1b24;
@@ -84,12 +84,16 @@
   background: #12121a;
   color: #eee;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   text-align: left;
   cursor: pointer;
 
   &:hover {
     border-color: #6c4cff;
+  }
+
+  &:focus-visible {
+    border-color: #b9a9ff;
   }
 
   &.current {

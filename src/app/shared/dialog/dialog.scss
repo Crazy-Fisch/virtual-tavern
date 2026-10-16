@@ -45,13 +45,15 @@
 .x {
   border: 0;
   background: transparent;
-  color: #999;
+  color: #aaa;
   font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
-  padding: 0 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.4rem;
 
   &:hover {
+    background: rgba(255, 255, 255, 0.1);
     color: #fff;
   }
 }

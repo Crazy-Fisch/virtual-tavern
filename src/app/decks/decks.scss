@@ -32,7 +32,7 @@
   color: #b9a9ff;
   text-decoration: none;
   // Works as both the routerLink <a> and the "back to overview" <button>.
-  padding: 0;
+  padding: 0.4rem 0.25rem;
   border: none;
   background: none;
   font: inherit;
@@ -52,7 +52,7 @@
 // Deposit/edit the card API (legal.md) — highlighted while none is set,
 // since no card data works without it.
 .api-btn {
-  padding: 0.4rem 0.75rem;
+  padding: 0.5rem 0.8rem;
   border: 1px solid #2e2e3a;
   border-radius: 0.5rem;
   background: #1b1b24;
@@ -133,7 +133,7 @@
 
   .hint {
     margin: 0;
-    color: #777;
+    color: #9a9aa8;
     font-size: 0.8rem;
   }
 }
@@ -221,6 +221,10 @@
     border-color: #4a4160;
   }
 
+  &:focus-visible {
+    border-color: #6c4cff;
+  }
+
   .deck-badge {
     position: relative;
     align-self: flex-start;
@@ -244,7 +248,7 @@
 
 .new-deck {
   margin-left: 0.6rem;
-  padding: 0.2rem 0.6rem;
+  padding: 0.35rem 0.7rem;
   border: 1px solid #2e2e3a;
   border-radius: 0.5rem;
   background: #1b1b24;
@@ -372,7 +376,7 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 
   button {
-    padding: 7px 10px;
+    padding: 9px 12px;
     border: none;
     border-radius: 5px;
     background: none;

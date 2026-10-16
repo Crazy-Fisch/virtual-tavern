@@ -22,3 +22,13 @@ body {
   /* Breathing room between the game UI and the screen edge. */
   --ui-gap: calc(1.6 * var(--u));
 }
+
+/* Keyboard focus ring for every control; component styles that draw their own focus (inputs) keep it. */
+:where(button, a, select, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #b9a9ff;
+  outline-offset: 2px;
+}
+
+:where(button:disabled) {
+  cursor: default;
+}

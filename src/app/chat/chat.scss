@@ -42,6 +42,10 @@ button {
   background: #6c4cff;
   color: #fff;
   cursor: pointer;
+
+  &:hover {
+    background: #7d61ff;
+  }
 }
 
 .head {
@@ -69,7 +73,11 @@ button {
 
 .leave {
   background: #333;
-  padding: 0.25rem 0.6rem;
+  padding: 0.4rem 0.7rem;
+
+  &:hover {
+    background: #4a4a55;
+  }
 }
 
 // Chat / History tab switch. The active tab reads as part of the log below it.
@@ -80,14 +88,15 @@ button {
 
 .tab {
   flex: 1;
-  padding: 0.3rem 0;
+  padding: 0.45rem 0;
   background: rgba(255, 255, 255, 0.06);
-  color: #aaa;
+  color: #bbb;
   font-size: 0.8rem;
   font-weight: 600;
 
   &:hover {
-    color: #ddd;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
   }
 
   &.active {
@@ -155,7 +164,7 @@ button {
 }
 
 .fold {
-  padding: 0.25rem 0.55rem;
+  padding: 0.4rem 0.65rem;
   background: #333;
   font-weight: 700;
   line-height: 1;
@@ -163,6 +172,11 @@ button {
   &:hover {
     background: #6c4cff;
   }
+}
+
+input:focus {
+  outline: none;
+  border-color: #6c4cff;
 }
 
 .unread {

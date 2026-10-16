@@ -43,7 +43,7 @@
 }
 
 .guest-tag {
-  color: #888;
+  color: #9a9aa8;
 }
 
 .actions {
@@ -68,6 +68,11 @@ button,
 
   &:hover {
     background: #2c2c3a;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 }
 
@@ -152,6 +157,11 @@ button,
     border-radius: 0.4rem;
     background: #15151c;
     color: #fff;
+
+    &:focus {
+      outline: none;
+      border-color: #6c4cff;
+    }
   }
 
   input.code {
@@ -163,7 +173,7 @@ button,
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    color: #666;
+    color: #8a8a98;
     font-size: 0.75rem;
 
     &::before,
@@ -176,7 +186,7 @@ button,
   }
 
   .optional {
-    color: #777;
+    color: #9a9aa8;
   }
 
   .who-play {
@@ -202,6 +212,6 @@ button,
   .hint {
     margin: 0.25rem 0 0;
     font-size: 0.75rem;
-    color: #888;
+    color: #9a9aa8;
   }
 }

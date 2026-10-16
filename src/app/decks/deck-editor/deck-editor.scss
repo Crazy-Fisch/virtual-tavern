@@ -30,6 +30,10 @@ button {
     background: #2a2540;
   }
 
+  &:focus-visible {
+    border-color: #b9a9ff;
+  }
+
   &.primary {
     border: none;
     background: #6c4cff;
@@ -147,8 +151,8 @@ input {
 }
 
 .chip {
-  min-width: 2rem;
-  padding: 0.2rem 0.45rem;
+  min-width: 2.2rem;
+  padding: 0.3rem 0.5rem;
   font-size: 0.8rem;
 
   &.wide {
@@ -221,6 +225,20 @@ input {
 
 .empty {
   color: #999;
+}
+
+// Narrow windows: the search panel drops above the list instead of squeezing it.
+@media (max-width: 1100px) {
+  .body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search {
+    position: static;
+    width: auto;
+    max-height: none;
+  }
 }
 
 // ---------- export / leave dialogs (projected into app-dialog, styled here) ----------

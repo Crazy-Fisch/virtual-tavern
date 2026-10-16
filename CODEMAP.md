@@ -102,3 +102,21 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 ## Done: draw animation + collapsible chat (t8)
 - Zones: `draw()` -> `announceDraw` (arriving/fresh/flights signals, `flightChain`, `.fly` overlay at end of zones.html, keyframes at end of zones.scss); opponents via `watchOpponents` effect (`.opp[data-uid]`). Only the deck-pile draw animates (scry/search to hand do not).
 - Chat docks left in a flex row (tavern.scss); `collapsed`/`unread`/`toggle()` in chat.ts, slim `.bar` in chat.html. Scene resizes through its ResizeObserver; zones still size from the window (`--u`).
+
+## Done: UI polish (t9)
+- Global `:focus-visible` ring in styles.scss (component styles with their own input focus keep it); hover/focus/disabled states added to chat, menu, decks, artwork picker, deck editor, dialog close.
+- Hit targets raised (chat tabs/Leave/fold, deck page buttons and menus, deck-lines +/−/Artwork/×, search results, util-window swatches, zone menus, life buttons min 28px). Zones text floors at 11-12px so 1366x768 (`--u` = 13.7px) stays readable; muted greys (#666/#777/#888) lifted to #8a8a98-#9a9aa8.
+- deck-lines list: the optional print column left an empty cell, so columns shifted between rows; fixed. Deck editor stacks the search panel above the list under 1100px.
+- Checked by reading styles only (no browser run); build, tests and `npm start` boot are clean.
+
+## UI follow-ups
+- Check every screen in a real browser at 1366x768 and 1920x1080; this pass was done from the stylesheets only.
+- Zones overlay is sized in `--u` only: on a small laptop the hand fan (50vw clip) and the opponents row can overlap; consider a minimum `--u` or a compact mode.
+- Hand has wheel-only scrolling: add visible scroll arrows or a drag-to-pan hint.
+- Menu, deck tiles and zone menus are mouse-first: arrow-key navigation and `Esc` to close for the context menus (deck/pile/card menus).
+- Card context menus (card-overlay) and reveal panel use fixed px/rem sizes unlike the `--u` widgets; unify.
+- Deck editor: the hover peek image uses a fixed `left: 20rem`; anchor it to the cursor row or put it in the search column for narrow windows.
+- Chat panel is a fixed 280px; make it resizable or use a % width on small screens.
+- Colour tokens (`#6c4cff`, `#1b1b24`, `#2e2e3a`, ...) are repeated in every scss file: move them to CSS custom properties in styles.scss.
+- Button styles are copied per component (menu, decks, deck-editor, zones): extract shared button/input classes.
+- Add `aria-label`s to icon-only buttons in zones.html (life +/−, poison +/−) and `role="dialog"` to the shared Dialog.

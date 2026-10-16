@@ -26,6 +26,8 @@
         <span class="name">{{ row.entry.card }}</span>
         @if (printLabel(row); as label) {
           <span class="print" title="Chosen artwork">{{ label }}</span>
+        } @else {
+          <span></span>
         }
         <span class="cost">{{ row.info?.manaCost }}</span>
         <span class="type">{{ row.info?.typeLine }}</span>
