@@ -1,50 +1,78 @@
-<div class="panel">
-  <div class="head">
+@if (collapsed()) {
+  <div class="bar">
+    <button
+      type="button"
+      class="fold"
+      title="Show chat and history"
+      aria-label="Show chat and history"
+      [attr.aria-expanded]="false"
+      (click)="toggle()"
+    >
+      »
+    </button>
+    @if (unread() > 0) {
+      <span class="unread" [title]="unread() + ' unread message(s)'">{{
+        unread() > 99 ? '99+' : unread()
+      }}</span>
+    }
     @if (room.currentRoom(); as r) {
-      <span class="room-name" [title]="r.name || 'Room'">{{ r.name || 'Room' }}</span>
-      <span class="badge" title="Room code — share it to invite others">{{ r.code }}</span>
-    }
-    <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
-    <button class="leave" (click)="leave()">Leave</button>
-  </div>
-  <div class="tabs">
-    <button
-      type="button"
-      class="tab"
-      [class.active]="tab() === 'chat'"
-      (click)="tab.set('chat')"
-    >
-      Chat
-    </button>
-    <button
-      type="button"
-      class="tab"
-      [class.active]="tab() === 'history'"
-      (click)="tab.set('history')"
-    >
-      History
-    </button>
-  </div>
-  <div #log class="log">
-    @for (m of visible(); track m.id) {
-      @if (m.kind === 'action') {
-        <div class="msg action">{{ m.name }}: {{ m.text }}</div>
-      } @else {
-        <div class="msg chat" [class.me]="m.from === room.userId()">
-          <span class="who">{{ m.name }}</span
-          >{{ m.text }}
-        </div>
-      }
-    } @empty {
-      @if (tab() === 'history') {
-        <p class="hint">Nothing has happened yet.</p>
-      } @else {
-        <p class="hint">No messages yet. Say hi 👋</p>
-      }
+      <span class="bar-name">{{ r.name || 'Room' }}</span>
     }
   </div>
-  <form class="compose" (submit)="send($event)">
-    <input [(ngModel)]="draft" name="draft" placeholder="Message…" autocomplete="off" />
-    <button type="submit">Send</button>
-  </form>
-</div>
+} @else {
+  <div class="panel">
+    <div class="head">
+      <button
+        type="button"
+        class="fold"
+        title="Hide chat and history"
+        aria-label="Hide chat and history"
+        [attr.aria-expanded]="true"
+        (click)="toggle()"
+      >
+        «
+      </button>
+      @if (room.currentRoom(); as r) {
+        <span class="room-name" [title]="r.name || 'Room'">{{ r.name || 'Room' }}</span>
+        <span class="badge" title="Room code — share it to invite others">{{ r.code }}</span>
+      }
+      <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
+      <button class="leave" (click)="leave()">Leave</button>
+    </div>
+    <div class="tabs">
+      <button type="button" class="tab" [class.active]="tab() === 'chat'" (click)="tab.set('chat')">
+        Chat
+      </button>
+      <button
+        type="button"
+        class="tab"
+        [class.active]="tab() === 'history'"
+        (click)="tab.set('history')"
+      >
+        History
+      </button>
+    </div>
+    <div #log class="log">
+      @for (m of visible(); track m.id) {
+        @if (m.kind === 'action') {
+          <div class="msg action">{{ m.name }}: {{ m.text }}</div>
+        } @else {
+          <div class="msg chat" [class.me]="m.from === room.userId()">
+            <span class="who">{{ m.name }}</span
+            >{{ m.text }}
+          </div>
+        }
+      } @empty {
+        @if (tab() === 'history') {
+          <p class="hint">Nothing has happened yet.</p>
+        } @else {
+          <p class="hint">No messages yet. Say hi 👋</p>
+        }
+      }
+    </div>
+    <form class="compose" (submit)="send($event)">
+      <input [(ngModel)]="draft" name="draft" placeholder="Message…" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+}

@@ -1,4 +1,16 @@
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  OnDestroy,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  type WritableSignal,
+} from '@angular/core';
 import { CardDatabaseService } from '../carddb/card-database.service';
 import { DeckStore } from '../decks/deck-store';
 import { Deck, deckSize, entrySrc } from '../decks/deck.types';
@@ -47,6 +59,28 @@ const HAND_CARD_U = 9.6;
 /** Fraction of the viewport width the visible hand may fill (its middle 50%). */
 const HAND_MAX_FRACTION = 0.5;
 
+/** Draw animation: flight time of one card, and how long the new card glows. */
+const FLY_MS = 600;
+const GLOW_MS = 1500;
+/** An opponent drawing several cards at once animates at most this many backs. */
+const MAX_OPP_FLIGHTS = 3;
+const CARD_RATIO = 88 / 63;
+
+/** A card or card back in flight between a deck and a hand, drawn above the UI. */
+type Flight = {
+  id: number;
+  src: string | null;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  dx: number;
+  dy: number;
+  s: number;
+  rot: number;
+};
+
 /** Life totals offered before a player has picked a starting total. */
 const START_LIVES = [20, 40];
 
@@ -92,6 +126,8 @@ export class Zones implements OnDestroy {
   protected readonly interactions = inject(CardInteractions);
   private readonly assets = inject(AssetLoaderService);
   private readonly room = inject(RoomService);
+  private readonly injector = inject(Injector);
+  private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   protected readonly deckSize = deckSize;
   protected readonly startLives = START_LIVES;
   protected readonly maxHand = MAX_VISIBLE_HAND;
@@ -121,6 +157,19 @@ export class Zones implements OnDestroy {
   protected readonly revealDraft = signal('');
   /** What the deck-viewing panel is showing, or null when it is closed. */
   protected readonly revealing = signal<{ cards: ZoneCard[]; mode: RevealMode } | null>(null);
+  /** Hand cards drawn but still in flight: kept invisible until they land. */
+  protected readonly arriving = signal<ReadonlySet<string>>(new Set());
+  /** Hand cards that just landed and glow for GLOW_MS. */
+  protected readonly fresh = signal<ReadonlySet<string>>(new Set());
+  /** Cards currently flying from a deck to a hand. */
+  protected readonly flights = signal<Flight[]>([]);
+  /** Flights run one after the other, so several quick draws read in sequence. */
+  private flightChain: Promise<void> = Promise.resolve();
+  private flightSeq = 0;
+  private readonly timers = new Set<ReturnType<typeof setTimeout>>();
+  private destroyed = false;
+  /** Opponents' hand and deck sizes at the previous update, to spot their draws. */
+  private readonly oppSizes = new Map<string, { hand: number; deck: number }>();
   /** Viewport size, tracked so the hand geometry re-fits on resize. */
   private readonly viewport = signal({ w: window.innerWidth, h: window.innerHeight });
 
@@ -161,10 +210,17 @@ export class Zones implements OnDestroy {
     // The tavern guard guarantees the room (and its world snapshot) is loaded
     // before the scene tree mounts.
     this.zones.refreshOwnerName();
+    effect(() => {
+      const others = this.zones.others();
+      untracked(() => this.watchOpponents(others));
+    });
     for (const target of this.dropTargets) this.interactions.registerDropTarget(target);
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    for (const timer of this.timers) clearTimeout(timer);
+    this.timers.clear();
     this.clearPendingDrag();
     this.clearHandHover();
     for (const target of this.dropTargets) this.interactions.unregisterDropTarget(target);
@@ -270,12 +326,16 @@ export class Zones implements OnDestroy {
     return Math.max(Math.min(natural, fit), cardW * 0.14);
   }
 
+  private handRotation(i: number, total: number): number {
+    return (i - (total - 1) / 2) * Math.min(MAX_FAN_STEP_DEG, FAN_SPREAD_DEG / Math.max(total, 1));
+  }
+
   /** Per-card transform: horizontal slot, a slight downward arc, and fan tilt. */
   protected handCardTransform(i: number, total: number): string {
     const centre = (total - 1) / 2;
     const dx = (i - centre) * this.handStepPx(total);
     const dy = (i - centre) ** 2 * 0.045 * this.u();
-    const rot = (i - centre) * Math.min(MAX_FAN_STEP_DEG, FAN_SPREAD_DEG / Math.max(total, 1));
+    const rot = this.handRotation(i, total);
     return `translate(calc(-50% + ${dx.toFixed(1)}px), ${dy.toFixed(1)}px) rotate(${rot.toFixed(2)}deg)`;
   }
 
@@ -486,7 +546,132 @@ export class Zones implements OnDestroy {
 
   protected draw(): void {
     this.menu.set(null);
+    const top = this.zones.mine().deck[0];
     this.zones.draw();
+    if (top && this.zones.mine().hand.some((c) => c.id === top.id)) this.announceDraw(top);
+  }
+
+  private reducedMotion(): boolean {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        resolve();
+      }, ms);
+      this.timers.add(timer);
+    });
+  }
+
+  /** Resolves after the next render, so a just-drawn card exists in the DOM. */
+  private nextRender(): Promise<void> {
+    return Promise.race([
+      new Promise<void>((resolve) => afterNextRender(() => resolve(), { injector: this.injector })),
+      this.sleep(100),
+    ]);
+  }
+
+  private mark(set: WritableSignal<ReadonlySet<string>>, id: string, on: boolean): void {
+    set.update((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  /**
+   * My draw: the card stays invisible in the hand while a copy flies in from
+   * the deck pile and flips face up (queued behind earlier draws); once it
+   * lands, the hand card glows for GLOW_MS. Reduced motion skips the flight and
+   * keeps the glow.
+   */
+  private announceDraw(card: ZoneCard): void {
+    if (this.reducedMotion()) {
+      this.land(card.id);
+      return;
+    }
+    this.mark(this.arriving, card.id, true);
+    this.flightChain = this.flightChain.then(() => this.flyIn(card));
+  }
+
+  private land(id: string): void {
+    this.mark(this.arriving, id, false);
+    this.mark(this.fresh, id, true);
+    void this.sleep(GLOW_MS).then(() => this.mark(this.fresh, id, false));
+  }
+
+  private async flyIn(card: ZoneCard): Promise<void> {
+    await this.nextRender();
+    if (this.destroyed) return;
+    const hand = this.zones.mine().hand;
+    const index = hand.findIndex((c) => c.id === card.id);
+    const target = this.hostEl.querySelector<HTMLElement>(`.hand-card[data-id="${card.id}"]`);
+    const pile = this.hostEl.querySelector<HTMLElement>('.pile.deck');
+    if (index >= 0 && target && pile) {
+      await this.fly(pile, target.getBoundingClientRect(), {
+        src: card.src,
+        name: card.name,
+        w: target.offsetWidth,
+        h: target.offsetHeight,
+        rot: this.handRotation(index, hand.length),
+      });
+    }
+    if (index < 0) this.mark(this.arriving, card.id, false);
+    else this.land(card.id);
+  }
+
+  /** Opponents draw: a card back flies from their deck chip to their hand. */
+  private watchOpponents(others: readonly PlayerZones[]): void {
+    for (const p of others) {
+      const prev = this.oppSizes.get(p.uid);
+      this.oppSizes.set(p.uid, { hand: p.hand.length, deck: p.deck.length });
+      if (!prev || this.reducedMotion()) continue;
+      if (p.deck.length >= prev.deck || p.hand.length <= prev.hand) continue;
+      const count = Math.min(p.hand.length - prev.hand, MAX_OPP_FLIGHTS);
+      for (let i = 0; i < count; i++) {
+        this.flightChain = this.flightChain.then(() => this.flyBack(p.uid));
+      }
+    }
+  }
+
+  private async flyBack(uid: string): Promise<void> {
+    await this.nextRender();
+    if (this.destroyed) return;
+    const opp = this.hostEl.querySelector<HTMLElement>(`.opp[data-uid="${uid}"]`);
+    const pile = opp?.querySelector<HTMLElement>('.mini.deck');
+    const hand = opp?.querySelector<HTMLElement>('.opp-hand');
+    if (!pile || !hand) return;
+    const w = 3.6 * this.u();
+    const h = w * CARD_RATIO;
+    const rect = hand.getBoundingClientRect();
+    const end = new DOMRect(rect.right - w, rect.top + (rect.height - h) / 2, w, h);
+    await this.fly(pile, end, { src: null, name: '', w, h, rot: 0 });
+  }
+
+  /** Run one flight from the centre of `from` to the rectangle `end`. */
+  private async fly(
+    from: HTMLElement,
+    end: DOMRect,
+    card: Pick<Flight, 'src' | 'name' | 'w' | 'h' | 'rot'>,
+  ): Promise<void> {
+    const start = from.getBoundingClientRect();
+    const cx = end.left + end.width / 2;
+    const cy = end.top + end.height / 2;
+    const flight: Flight = {
+      ...card,
+      id: ++this.flightSeq,
+      x: cx - card.w / 2,
+      y: cy - card.h / 2,
+      dx: start.left + start.width / 2 - cx,
+      dy: start.top + start.height / 2 - cy,
+      s: Math.max(start.width / card.w, 0.2),
+    };
+    this.flights.update((all) => [...all, flight]);
+    await this.sleep(FLY_MS);
+    this.flights.update((all) => all.filter((f) => f.id !== flight.id));
   }
 
   protected shuffle(): void {

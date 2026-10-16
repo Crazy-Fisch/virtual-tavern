@@ -272,6 +272,7 @@ what resolves every decklist entry against the card database, calls `loadDeck()`
 created with the shuffled deck), and starts prefetching the card images, so merely browsing
 decks never costs a download. `refreshOwnerName()` only renames zones that already exist
 (rejoin).
+**Draw animation** (Zones): `draw()` hides the drawn hand card (`arriving`), a decorative `.fly` copy flies from the deck pile to the card's measured slot and flips face up (`flights`, queued on `flightChain` so quick draws run in sequence), then the card glows for 1.5 s (`fresh`). Opponents' draws (deck shrinks while hand grows) fly a card back from their deck chip. `prefers-reduced-motion` skips the flight and keeps the glow.
 
 **Looking at my own deck** is `src/app/zones/reveal.ts` (pure) plus the `RevealPanel` component
 (`reveal-panel/`), in two `RevealMode`s over one session model: **reveal** — scry the top n
@@ -445,7 +446,7 @@ with a constructor call only because its spawn `await`s the model load before to
   only by an explicit `leave()`, so a page reload rejoins the same room (re-validated through
   the join-by-code RPC) — and redirects to `/` only if that fails.
 
-`Chat` (`src/app/chat/`) is the in-room overlay and the game history: shows the room name and
+`Chat` (`src/app/chat/`) is the in-room panel docked left of the table (Tavern is a flex row, so the scene takes the width a fold frees; `collapsed` persisted in localStorage `virtual-tavern.chat-collapsed`, folded slim bar with an unread badge counting chat messages from others since the fold) and the game history: shows the room name and
 share code + peer count, and renders `room.messages()` split over two tabs — **Chat**
 (default) with the user-typed messages (own messages matched by auth uid, colored) and
 **History** with the `'action'`-kind game lines (plain white); the log stays pinned to the

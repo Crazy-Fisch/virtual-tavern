@@ -2,7 +2,7 @@
      when revealed); the deck is a count; graveyard and exile are examinable. -->
 <div class="others">
   @for (p of zones.others(); track p.uid) {
-    <div class="opp">
+    <div class="opp" [attr.data-uid]="p.uid">
       <span class="opp-name">{{ p.name }}</span>
       <span class="opp-life" title="Life">♥ {{ p.life ?? '—' }}</span>
       @if (p.poison > 0) {
@@ -80,7 +80,10 @@
         <button
           type="button"
           class="hand-card"
+          [attr.data-id]="c.id"
           [class.revealed]="c.revealed"
+          [class.arriving]="arriving().has(c.id)"
+          [class.fresh]="fresh().has(c.id)"
           [style.transform]="handCardTransform(i, me.hand.length)"
           [title]="'Drag onto the table to play ' + c.name + ' — V to view, right-click to reveal'"
           (pointerdown)="startDrag($event, c)"
@@ -328,4 +331,34 @@
       }
     </div>
   </app-dialog>
+}
+
+<!-- Draw animation: a card (mine face up after the flip) or a card back (an opponent's)
+     flies from the deck to the hand. Purely decorative; the real card is already placed. -->
+@for (f of flights(); track f.id) {
+  <div
+    class="fly"
+    aria-hidden="true"
+    [style.left.px]="f.x"
+    [style.top.px]="f.y"
+    [style.width.px]="f.w"
+    [style.height.px]="f.h"
+    [style.--dx]="f.dx + 'px'"
+    [style.--dy]="f.dy + 'px'"
+    [style.--s]="f.s"
+    [style.--rot]="f.rot + 'deg'"
+  >
+    <div class="fly-card" [class.flip]="f.src !== null">
+      <div class="fly-face back"></div>
+      @if (f.src) {
+        <img
+          class="fly-face front"
+          [src]="f.src"
+          alt=""
+          crossorigin="anonymous"
+          draggable="false"
+        />
+      }
+    </div>
+  </div>
 }

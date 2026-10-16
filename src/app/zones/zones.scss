@@ -716,3 +716,86 @@ button.mini {
     background: #6c4cff;
   }
 }
+
+// ---------- draw animation ----------
+// A hand card is invisible while its copy flies in, then glows briefly so the
+// player sees which card was added.
+.hand-card.arriving {
+  opacity: 0;
+}
+
+.hand-card.fresh img {
+  animation: fresh-glow 1.5s ease-out both;
+}
+
+@keyframes fresh-glow {
+  0%,
+  35% {
+    box-shadow:
+      0 0 calc(2.4 * var(--u)) calc(0.7 * var(--u)) rgba(255, 220, 120, 0.95),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+    outline: calc(0.2 * var(--u)) solid rgba(255, 226, 140, 0.95);
+    outline-offset: calc(-0.2 * var(--u));
+  }
+  100% {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    outline: calc(0.2 * var(--u)) solid rgba(255, 226, 140, 0);
+    outline-offset: calc(-0.2 * var(--u));
+  }
+}
+
+.fly {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  perspective: calc(60 * var(--u));
+  animation: fly-in 0.6s cubic-bezier(0.25, 0.7, 0.25, 1) both;
+}
+
+@keyframes fly-in {
+  from {
+    transform: translate(var(--dx), var(--dy)) scale(var(--s)) rotate(0deg);
+  }
+  to {
+    transform: translate(0, 0) scale(1) rotate(var(--rot));
+  }
+}
+
+.fly-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+
+  &.flip {
+    animation: fly-flip 0.6s ease-in-out both;
+  }
+}
+
+@keyframes fly-flip {
+  from {
+    transform: rotateY(180deg);
+  }
+  to {
+    transform: rotateY(0deg);
+  }
+}
+
+.fly-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(0.3 * var(--u));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  backface-visibility: hidden;
+
+  &.back {
+    @extend %card-back;
+    transform: rotateY(180deg);
+  }
+}
+
+.fly-card:not(.flip) .fly-face.back {
+  transform: none;
+}

@@ -98,3 +98,7 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 - No sideboard/commander in the deck model, so no such sections. Included decks read-only + "Save a copy".
 - The `decks` table had NO update policy (rename/setPrint were silently refused for accounts): `supabase/migration-2026-10-16-decks-update.sql` + schema.sql add it; it must be run in the Supabase SQL editor. Guests (localStorage) are unaffected.
 - Initial bundle warning budget raised to 1.45MB.
+
+## Done: draw animation + collapsible chat (t8)
+- Zones: `draw()` -> `announceDraw` (arriving/fresh/flights signals, `flightChain`, `.fly` overlay at end of zones.html, keyframes at end of zones.scss); opponents via `watchOpponents` effect (`.opp[data-uid]`). Only the deck-pile draw animates (scry/search to hand do not).
+- Chat docks left in a flex row (tavern.scss); `collapsed`/`unread`/`toggle()` in chat.ts, slim `.bar` in chat.html. Scene resizes through its ResizeObserver; zones still size from the window (`--u`).
