@@ -28,12 +28,13 @@
       <div class="card-grid">
         @for (entry of deck.list; track $index) {
           @let rec = resolve(entry.card);
-          <figure class="db-card" [class.missing]="!rec" [class.noimg]="rec && !rec.src">
-            @if (rec && rec.src) {
+          @let art = srcOf(entry);
+          <figure class="db-card" [class.missing]="!rec && !art" [class.noimg]="rec && !art">
+            @if (art) {
               <img
-                [src]="rec.src"
-                [alt]="rec.name"
-                [title]="rec.name"
+                [src]="art"
+                [alt]="rec?.name ?? entry.card"
+                [title]="rec?.name ?? entry.card"
                 crossorigin="anonymous"
                 loading="lazy"
               />

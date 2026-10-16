@@ -1,5 +1,33 @@
-/** One decklist line: a card name and how many copies of it. */
-export type DeckEntry = { card: string; count: number };
+/**
+ * A chosen printing of a card. A decklist import records only `set` (+
+ * `collector`); the print service later fills `id`/`src`/`back` from the card
+ * API. A print with a `src` wins over the card database's default art
+ * everywhere the card renders.
+ */
+export type DeckPrint = {
+  /** Lowercase set code, e.g. `m10`. */
+  set: string;
+  collector?: string;
+  /** Scryfall card id. */
+  id?: string;
+  /** Front-face image URL; absent while the print is not resolved yet. */
+  src?: string;
+  /** Second face of a double-faced print. */
+  back?: string;
+};
+
+/** One decklist line: a card name, how many copies of it, and an optional chosen print. */
+export type DeckEntry = { card: string; count: number; print?: DeckPrint };
+
+/** Identity of an entry's print, so copies with different art stay separate lines. */
+export function printKey(print: DeckPrint | undefined): string {
+  return print ? `${print.set}/${print.collector ?? ''}/${print.id ?? ''}` : '';
+}
+
+/** Image to show for an entry: its chosen print, else the database's default art. */
+export function entrySrc(entry: DeckEntry, fallback?: string): string {
+  return entry.print?.src || fallback || '';
+}
 
 /**
  * A player-built deck (the design doc's "basic json file with a name and a

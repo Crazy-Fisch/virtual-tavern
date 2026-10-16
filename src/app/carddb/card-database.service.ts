@@ -4,18 +4,19 @@ import { CardDbCache } from './card-db-cache';
 import { JsonChunkParser } from './json-chunk-parser';
 
 /** Cache key of the compact index, per deposited API base URL — changing the
- * deposit therefore loads (or downloads) that API's own index. v4 added the
- * second face of double-faced cards (mdfcs.md), v3 the per-card related names
- * (all_parts), so older indexes must be rebuilt. */
+ * deposit therefore loads (or downloads) that API's own index. v5 picks the
+ * most readable printing per name (English, normal frame) and keeps its set and
+ * collector number, v4 added the second face of double-faced cards (mdfcs.md),
+ * v3 the per-card related names (all_parts), so older indexes must be rebuilt. */
 function indexKey(base: string): string {
-  return `index:v4:${base}`;
+  return `index:v5:${base}`;
 }
 
-/** Keys the same base's index was cached under before related names (v2) and
- * before the second face (v3); superseded, so both are deleted when the current
- * index is (re)built. */
+/** Keys the same base's index was cached under before related names (v2), before
+ * the second face (v3) and before the readable-print choice (v4); superseded, so
+ * all are deleted when the current index is (re)built. */
 function staleIndexKeys(base: string): string[] {
-  return [`index:v2:${base}`, `index:v3:${base}`];
+  return [`index:v2:${base}`, `index:v3:${base}`, `index:v4:${base}`];
 }
 
 /** Key of the index cached by builds that still shipped an app-level bulk URL
@@ -34,16 +35,43 @@ export type CardRecord = {
   back?: string;
   /** Related card names from the card data's all_parts; absent when none. */
   related?: string[];
+  /** Set code and collector number of the printing the art comes from. */
+  set?: string;
+  collector?: string;
 };
 
 export type CardDbStatus = 'idle' | 'downloading' | 'ready' | 'error';
 
 type BulkCard = {
   name?: string;
+  set?: string;
+  collector_number?: string;
+  lang?: string;
+  full_art?: boolean;
+  textless?: boolean;
+  border_color?: string;
+  image_status?: string;
   image_uris?: { normal?: string };
   card_faces?: { image_uris?: { normal?: string } }[];
   all_parts?: { name?: string }[];
 };
+
+/**
+ * How readable a printing's art is as the default image of its card: English
+ * (a card object without a `lang` counts as English), a normal frame (not
+ * full-art, textless or borderless) and a real scan beat the alternatives. The
+ * first printing of the highest score wins, so a card with a normal English
+ * print never ends up showing a Japanese or full-art one.
+ */
+export function printScore(card: BulkCard): number {
+  let score = 0;
+  if (!card.lang || card.lang === 'en') score += 8;
+  if (!card.full_art) score += 4;
+  if (!card.textless) score += 2;
+  if (card.border_color !== 'borderless') score += 1;
+  if (card.image_status === 'placeholder' || card.image_status === 'missing') score -= 16;
+  return Math.max(score, 0);
+}
 
 /**
  * The one or two images a card object carries (mdfcs.md). A genuinely
@@ -258,6 +286,7 @@ export class CardDatabaseService {
     const bytes = startsWith(head, GZIP_MAGIC) ? stream.pipeThrough(gunzip()) : stream;
 
     const index: Record<string, CardRecord> = {};
+    const scores = new Map<CardRecord, number>();
     const parser = new JsonChunkParser();
     const decoder = new TextDecoder();
     const reader = bytes.getReader();
@@ -265,18 +294,24 @@ export class CardDatabaseService {
       const { done, value } = await reader.read();
       if (done) break;
       for (const source of parser.push(decoder.decode(value, { stream: true }))) {
-        this.add(index, JSON.parse(source) as BulkCard);
+        this.add(index, JSON.parse(source) as BulkCard, scores);
       }
     }
     for (const source of parser.push(decoder.decode())) {
-      this.add(index, JSON.parse(source) as BulkCard);
+      this.add(index, JSON.parse(source) as BulkCard, scores);
     }
     return index;
   }
 
+  private setPrintInfo(record: CardRecord, card: BulkCard): void {
+    if (card.set) record.set = card.set;
+    if (card.collector_number) record.collector = card.collector_number;
+  }
+
   /**
-   * Index one card object. The bulk file holds every printing; the first one
-   * with an image wins per name, and the first that knows its related parts
+   * Index one card object. The bulk file holds every printing; the most
+   * readable one with an image wins per name (`printScore`, earliest on a tie),
+   * and the first that knows its related parts
    * contributes those (all_parts is per printing — many carry none). Tokens
    * are ordinary card objects in the bulk file and index like any other, which
    * is what lets related names resolve to an image. Double-faced names
@@ -284,14 +319,28 @@ export class CardDatabaseService {
    * only that — the front key shares the record, so later merges reach both,
    * and with them the second face such a card flips to (mdfcs.md).
    */
-  private add(index: Record<string, CardRecord>, card: BulkCard): void {
+  private add(
+    index: Record<string, CardRecord>,
+    card: BulkCard,
+    scores: Map<CardRecord, number>,
+  ): void {
     if (!card.name) return;
     const { src, back } = facesOf(card);
     const related = relatedNamesOf(card);
     const key = card.name.toLowerCase();
+    const score = src ? printScore(card) : -1;
     let record = index[key];
-    if (!record) record = index[key] = { name: card.name, src };
-    else if (!record.src && src) record.src = src;
+    if (!record) {
+      record = index[key] = { name: card.name, src };
+      scores.set(record, score);
+      this.setPrintInfo(record, card);
+    } else if (score > (scores.get(record) ?? -1)) {
+      record.src = src;
+      if (back) record.back = back;
+      else delete record.back;
+      scores.set(record, score);
+      this.setPrintInfo(record, card);
+    }
     if (back && !record.back) record.back = back;
     if (related.length && !record.related?.length) record.related = related;
     const front = card.name.split(' // ')[0]!;

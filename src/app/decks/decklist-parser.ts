@@ -1,4 +1,4 @@
-import { DeckEntry } from './deck.types';
+import { DeckEntry, DeckPrint, printKey } from './deck.types';
 
 /**
  * Section headers emitted by the common deckbuilder exports (Arena, Moxfield,
@@ -27,23 +27,31 @@ const TRAILING_MARKER = /\s*(\[[^\]]*\]|\*[^*]*\*|\^[^^]*\^)$/;
  */
 const SET_AND_COLLECTOR = /\s*\(([A-Za-z0-9]{2,6})\)(\s+[\w★†-]+)?$/;
 
-function stripDecorations(raw: string): string {
+function stripDecorations(raw: string): { name: string; print?: DeckPrint } {
   let name = raw.trim();
   let previous;
   do {
     previous = name;
     name = name.replace(TRAILING_MARKER, '');
   } while (name !== previous);
-  return name.replace(SET_AND_COLLECTOR, '').trim();
+  const match = SET_AND_COLLECTOR.exec(name);
+  if (!match) return { name };
+  const collector = match[2]?.trim();
+  return {
+    name: name.slice(0, match.index).trim(),
+    print: { set: match[1]!.toLowerCase(), ...(collector ? { collector } : {}) },
+  };
 }
 
 /**
  * Parse a pasted decklist into entries, covering the common export formats:
  * plain name-per-line lists, `4x` counts, MTGO's `SB:` prefix, Arena/Moxfield
- * `(SET) 123` suffixes, and Archidekt category/foil markers. Blank lines,
- * comments (`//`, `#`), and section headers are skipped; duplicate names merge
- * their counts (case-insensitive, first spelling wins). Returns [] when
- * nothing parseable is found.
+ * `(SET) 123` suffixes, and Archidekt category/foil markers. A `(SET) 123`
+ * suffix is kept as the entry's `print` (set + collector, still unresolved).
+ * Blank lines, comments (`//`, `#`), and section headers are skipped; duplicate
+ * name + print pairs merge their counts (case-insensitive, first spelling wins),
+ * so lands of different sets stay separate lines. Returns [] when nothing
+ * parseable is found.
  */
 export function parseDecklist(text: string): DeckEntry[] {
   const entries = new Map<string, DeckEntry>();
@@ -64,7 +72,8 @@ export function parseDecklist(text: string): DeckEntry[] {
 
     const prefixed = COUNT_PREFIX.exec(line);
     let count = prefixed ? Number(prefixed[1]) : 1;
-    let name = stripDecorations(prefixed ? prefixed[2]! : line);
+    const stripped = stripDecorations(prefixed ? prefixed[2]! : line);
+    let name = stripped.name;
     if (!prefixed) {
       const suffixed = COUNT_SUFFIX.exec(name);
       if (suffixed) {
@@ -74,10 +83,11 @@ export function parseDecklist(text: string): DeckEntry[] {
     }
     if (!name || count < 1) continue;
 
-    const key = name.toLowerCase();
+    const key = `${name.toLowerCase()}|${printKey(stripped.print)}`;
     const existing = entries.get(key);
     if (existing) existing.count += count;
-    else entries.set(key, { card: name, count });
+    else
+      entries.set(key, { card: name, count, ...(stripped.print ? { print: stripped.print } : {}) });
   }
   return [...entries.values()];
 }

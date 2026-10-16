@@ -1,7 +1,8 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { CardPrintService } from '../carddb/card-print.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { BuiltInDecks } from './built-in-decks';
-import { Deck, DeckEntry, isBuiltInDeck } from './deck.types';
+import { Deck, DeckEntry, DeckPrint, isBuiltInDeck, printKey } from './deck.types';
 import { parseDecklist } from './decklist-parser';
 
 /** Per-browser localStorage key holding a guest's decks (also the legacy key). */
@@ -21,6 +22,17 @@ function isDeck(value: unknown): value is Deck {
     Array.isArray(deck.list) &&
     deck.list.every(isEntry)
   );
+}
+
+function mergeEntries(list: DeckEntry[]): DeckEntry[] {
+  const merged = new Map<string, DeckEntry>();
+  for (const entry of list) {
+    const key = `${entry.card.toLowerCase()}|${printKey(entry.print)}`;
+    const existing = merged.get(key);
+    if (existing) existing.count += entry.count;
+    else merged.set(key, { ...entry });
+  }
+  return [...merged.values()];
 }
 
 function cleanName(name: string): string {
@@ -47,6 +59,7 @@ function cleanName(name: string): string {
 export class DeckStore {
   private readonly supabase = inject(SupabaseService);
   private readonly builtIn = inject(BuiltInDecks);
+  private readonly prints = inject(CardPrintService);
 
   /** The player's own decks — what localStorage / the `decks` table holds. */
   private readonly _decks = signal<Deck[]>([]);
@@ -86,8 +99,9 @@ export class DeckStore {
    */
   async import(name: string, decklist: string): Promise<string | null> {
     if (!this.available()) return 'Sign in (or continue as a guest) to keep decks.';
-    const list = parseDecklist(decklist);
-    if (list.length === 0) return 'No cards found — paste a decklist like “4 Lightning Bolt”.';
+    const parsed = parseDecklist(decklist);
+    if (parsed.length === 0) return 'No cards found — paste a decklist like “4 Lightning Bolt”.';
+    const list = await this.prints.resolveEntries(parsed);
     const deck: Deck = { id: crypto.randomUUID(), name: cleanName(name), list };
     // Optimistic append, rolled back if the account insert fails.
     this._decks.update((decks) => [...decks, deck]);
@@ -116,6 +130,46 @@ export class DeckStore {
     this._decks.update((decks) => decks.map((d) => (d.id === id ? { ...d, name: clean } : d)));
     if (this.onAccount())
       void this.supabase.client.from('decks').update({ name: clean }).eq('id', id);
+    else this.persistLocal();
+  }
+
+  /**
+   * Choose the artwork of `count` copies (default: the whole line) of the entry
+   * at `index`, or clear the choice with `print` undefined. Copies split off
+   * into their own line, and a line that ends up with the same card and print as
+   * another merges into it. Built-in decks cannot be changed.
+   */
+  setPrint(id: string, index: number, print: DeckPrint | undefined, count?: number): void {
+    if (isBuiltInDeck(id)) return;
+    const deck = this._decks().find((d) => d.id === id);
+    const entry = deck?.list[index];
+    if (!deck || !entry) return;
+    const moved = Math.min(Math.max(count ?? entry.count, 1), entry.count);
+    const rest = entry.count - moved;
+    const changed: DeckEntry = { card: entry.card, count: moved, ...(print ? { print } : {}) };
+    const list: DeckEntry[] = deck.list.flatMap((e, i) => {
+      if (i !== index) return [e];
+      return rest > 0 ? [{ ...entry, count: rest }, changed] : [changed];
+    });
+    this.replaceList(id, mergeEntries(list));
+  }
+
+  /**
+   * A deck's entries with every imported `(SET) number` resolved to its image
+   * (decks imported before a card API was deposited, and the shipped ones).
+   * Resolved prints of the player's own decks are saved back to the deck.
+   */
+  async resolvedList(deck: Deck): Promise<DeckEntry[]> {
+    const list = await this.prints.resolveEntries(deck.list);
+    if (list !== deck.list && this._decks().some((d) => d.id === deck.id)) {
+      this.replaceList(deck.id, list);
+    }
+    return list;
+  }
+
+  private replaceList(id: string, list: DeckEntry[]): void {
+    this._decks.update((decks) => decks.map((d) => (d.id === id ? { ...d, list } : d)));
+    if (this.onAccount()) void this.supabase.client.from('decks').update({ list }).eq('id', id);
     else this.persistLocal();
   }
 

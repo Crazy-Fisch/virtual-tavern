@@ -195,7 +195,7 @@ describe('CardDatabaseService', () => {
     expect(service.lookup('Wormcaller')!.related).toEqual(['Worm Token']);
     expect(service.lookup('Worm Token')!.src).toBe('https://img/worm-token.jpg');
     expect(service.progress()).toBe(1);
-    expect(cache.store.has('index:v4:https://api.example.com')).toBe(true);
+    expect(cache.store.has('index:v5:https://api.example.com')).toBe(true);
   });
 
   it('indexes a JSON Lines export offered via jsonl_download_uri', async () => {
@@ -238,7 +238,7 @@ describe('CardDatabaseService', () => {
     const index: Record<string, CardRecord> = {
       'cached card': { name: 'Cached Card', src: 'https://img/cached.jpg' },
     };
-    cache.store.set('index:v4:https://api.example.com', index);
+    cache.store.set('index:v5:https://api.example.com', index);
     const fetchMock = stubApi();
     init();
     apiUrl.set('https://api.example.com');
@@ -252,14 +252,16 @@ describe('CardDatabaseService', () => {
     const stale = { 'stale card': { name: 'Stale Card', src: 'https://img/stale.jpg' } };
     cache.store.set('index:v2:https://api.example.com', stale);
     cache.store.set('index:v3:https://api.example.com', stale);
+    cache.store.set('index:v4:https://api.example.com', stale);
     const fetchMock = stubApi();
     init();
     apiUrl.set('https://api.example.com');
     await vi.waitFor(() => expect(service.status()).toBe('ready'));
-    expect(fetchMock).toHaveBeenCalled(); // neither old index satisfied v4
+    expect(fetchMock).toHaveBeenCalled(); // no old index satisfied v5
     expect(cache.store.has('index:v2:https://api.example.com')).toBe(false);
     expect(cache.store.has('index:v3:https://api.example.com')).toBe(false);
-    expect(cache.store.has('index:v4:https://api.example.com')).toBe(true);
+    expect(cache.store.has('index:v4:https://api.example.com')).toBe(false);
+    expect(cache.store.has('index:v5:https://api.example.com')).toBe(true);
     expect(service.lookup('Stale Card')).toBeUndefined();
   });
 

@@ -1,7 +1,7 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { CardDatabaseService } from '../carddb/card-database.service';
 import { DeckStore } from '../decks/deck-store';
-import { Deck, deckSize } from '../decks/deck.types';
+import { Deck, deckSize, entrySrc } from '../decks/deck.types';
 import { RoomService } from '../room/room.service';
 import { AssetLoaderService } from '../scene/asset-loader.service';
 import { CardDropTarget, CardInteractions, DRAG_Y } from '../scene/card/card-interactions';
@@ -225,22 +225,23 @@ export class Zones implements OnDestroy {
    * shuffled deck, and only now start warming the image caches — a deck that
    * was merely looked at never costs a download (polishpart2.md).
    */
-  protected confirmDeck(): void {
+  protected async confirmDeck(): Promise<void> {
     const deck = this.pendingDeck();
     if (!deck) return;
-    const cards = deck.list.flatMap((entry) => {
+    this.pendingDeck.set(null);
+    const list = await this.decks.resolvedList(deck);
+    const cards = list.flatMap((entry) => {
       const record = this.db.lookup(entry.card);
       return Array.from(
         { length: entry.count },
         (): ZoneCard => ({
           id: crypto.randomUUID(),
           name: record?.name ?? entry.card,
-          src: record?.src ?? '',
+          src: entrySrc(entry, record?.src),
         }),
       );
     });
     this.zones.loadDeck(cards);
-    this.pendingDeck.set(null);
     const srcs = new Set(cards.map((c) => c.src));
     srcs.delete('');
     for (const src of srcs) void this.assets.loadTexture(src).catch(() => undefined);
@@ -249,7 +250,7 @@ export class Zones implements OnDestroy {
   /** Art of a deck's first card, backing its tile in the picker (like the Decks screen). */
   protected firstCardSrc(deck: Deck): string | null {
     const first = deck.list[0];
-    return first ? (this.db.lookup(first.card)?.src ?? null) : null;
+    return first ? entrySrc(first, this.db.lookup(first.card)?.src) || null : null;
   }
 
   /** Effective `--u` in px, mirroring styles.scss `min(1vw, 1.7778vh)`. */

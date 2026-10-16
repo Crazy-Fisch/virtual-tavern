@@ -4,7 +4,7 @@ import { CardApiService } from '../carddb/card-api.service';
 import { CardDatabaseService, CardRecord } from '../carddb/card-database.service';
 import { Dialog } from '../shared/dialog/dialog';
 import { DeckStore } from './deck-store';
-import { Deck, deckSize, isBuiltInDeck } from './deck.types';
+import { Deck, DeckEntry, deckSize, entrySrc, isBuiltInDeck } from './deck.types';
 
 /** Screen anchor (relative to the page) of the right-click menu on a deck tile. */
 type DeckMenu = { deck: Deck; x: number; y: number };
@@ -83,10 +83,15 @@ export class Decks {
     return this.db.lookup(name);
   }
 
+  /** Image of a deck line: its chosen print, else the database's default art. */
+  protected srcOf(entry: DeckEntry): string {
+    return entrySrc(entry, this.db.lookup(entry.card)?.src);
+  }
+
   /** First card's art, used as a deck tile's cutout background (null if unknown). */
   protected firstCardSrc(deck: Deck): string | null {
     const first = deck.list[0];
-    return (first && this.db.lookup(first.card)?.src) || null;
+    return (first && this.srcOf(first)) || null;
   }
 
   protected openView(deck: Deck): void {

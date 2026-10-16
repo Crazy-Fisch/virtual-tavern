@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
+import { CardPrintService } from '../carddb/card-print.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { BuiltInDecks } from './built-in-decks';
 import { DeckStore } from './deck-store';
@@ -54,6 +55,7 @@ function setup(
   TestBed.configureTestingModule({
     providers: [
       { provide: SupabaseService, useValue: supabase },
+      { provide: CardPrintService, useValue: { resolveEntries: async (list: unknown) => list } },
       // Stubbed at the service seam: the real one fetches over the network.
       {
         provide: BuiltInDecks,

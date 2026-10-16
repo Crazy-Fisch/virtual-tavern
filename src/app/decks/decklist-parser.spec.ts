@@ -25,9 +25,9 @@ describe('parseDecklist', () => {
       '1 Abrade (VOW) 139',
     ].join('\n');
     expect(parseDecklist(text)).toEqual([
-      { card: 'Consider', count: 4 },
-      { card: 'Arclight Phoenix', count: 2 },
-      { card: 'Abrade', count: 1 },
+      { card: 'Consider', count: 4, print: { set: 'mid', collector: '44' } },
+      { card: 'Arclight Phoenix', count: 2, print: { set: 'grn', collector: '91' } },
+      { card: 'Abrade', count: 1, print: { set: 'vow', collector: '139' } },
     ]);
   });
 
@@ -35,8 +35,8 @@ describe('parseDecklist', () => {
     expect(
       parseDecklist('1x Abrade (voc) 220 *F* [Removal]\n1x Sol Ring (c21) 263 [Ramp]'),
     ).toEqual([
-      { card: 'Abrade', count: 1 },
-      { card: 'Sol Ring', count: 1 },
+      { card: 'Abrade', count: 1, print: { set: 'voc', collector: '220' } },
+      { card: 'Sol Ring', count: 1, print: { set: 'c21', collector: '263' } },
     ]);
   });
 
@@ -48,14 +48,14 @@ describe('parseDecklist', () => {
   });
 
   it('merges duplicate names case-insensitively, keeping the first spelling', () => {
-    expect(parseDecklist('2 Lightning Bolt\n1 lightning bolt (2X2) 117')).toEqual([
+    expect(parseDecklist('2 Lightning Bolt\n1 lightning bolt')).toEqual([
       { card: 'Lightning Bolt', count: 3 },
     ]);
   });
 
   it('skips blanks and comments, keeps split-card names with //', () => {
     expect(parseDecklist('// my burn deck\n# scratch\n\n3 Fire // Ice (apc) 128')).toEqual([
-      { card: 'Fire // Ice', count: 3 },
+      { card: 'Fire // Ice', count: 3, print: { set: 'apc', collector: '128' } },
     ]);
   });
 

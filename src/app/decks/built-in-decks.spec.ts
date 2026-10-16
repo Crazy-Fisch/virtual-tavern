@@ -47,8 +47,8 @@ describe('BuiltInDecks', () => {
         id: 'builtin:red_dragons.txt',
         name: 'Red Dragons',
         list: [
-          { card: 'Lightning Strike', count: 4 },
-          { card: 'Mountain', count: 22 },
+          { card: 'Lightning Strike', count: 4, print: { set: 'dmu', collector: '137' } },
+          { card: 'Mountain', count: 22, print: { set: 'mom', collector: '280' } },
         ],
       },
       {
