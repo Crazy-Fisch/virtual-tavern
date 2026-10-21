@@ -64,6 +64,24 @@ button {
   white-space: nowrap;
 }
 
+.head.sub {
+  flex-wrap: wrap;
+}
+
+.peers {
+  margin-left: auto;
+}
+
+.copy {
+  padding: 0.2rem 0.55rem;
+  background: #333;
+  font-size: 0.75rem;
+
+  &:hover {
+    background: #4a4a55;
+  }
+}
+
 .badge {
   background: #6c4cff;
   padding: 0.15rem 0.5rem;

@@ -217,6 +217,13 @@ app-dialog {
   max-width: 96vw;
 }
 
+.opp-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(0.1 * var(--u));
+}
+
 .opp {
   @extend %panel;
   display: flex;
@@ -416,6 +423,7 @@ button.mini {
   @extend %panel;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: calc(0.4 * var(--u));
   padding: calc(0.25 * var(--u)) calc(0.5 * var(--u));
   border-radius: calc(0.5 * var(--u));
@@ -423,7 +431,8 @@ button.mini {
 
 .counters {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: calc(0.5 * var(--u));
 }
 

@@ -62,9 +62,16 @@ const HAND_MAX_FRACTION = 0.5;
 /** Draw animation: flight time of one card, and how long the new card glows. */
 const FLY_MS = 600;
 const GLOW_MS = 1500;
-/** An opponent drawing several cards at once animates at most this many backs. */
-const MAX_OPP_FLIGHTS = 3;
 const CARD_RATIO = 88 / 63;
+
+/** One running flight; finish() ends it at once (removes the card, runs its landing). */
+interface FlightRun {
+  group: 'own' | 'opp';
+  done: boolean;
+  flightId: number;
+  wake: () => void;
+  finish: () => void;
+}
 
 /** A card or card back in flight between a deck and a hand, drawn above the UI. */
 type Flight = {
@@ -163,8 +170,8 @@ export class Zones implements OnDestroy {
   protected readonly fresh = signal<ReadonlySet<string>>(new Set());
   /** Cards currently flying from a deck to a hand. */
   protected readonly flights = signal<Flight[]>([]);
-  /** Flights run one after the other, so several quick draws read in sequence. */
-  private flightChain: Promise<void> = Promise.resolve();
+  /** Running flights; a new flight of the same group finishes the previous one at once. */
+  private readonly runs = new Set<FlightRun>();
   private flightSeq = 0;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private destroyed = false;
@@ -584,17 +591,45 @@ export class Zones implements OnDestroy {
 
   /**
    * My draw: the card stays invisible in the hand while a copy flies in from
-   * the deck pile and flips face up (queued behind earlier draws); once it
-   * lands, the hand card glows for GLOW_MS. Reduced motion skips the flight and
-   * keeps the glow.
+   * the deck pile and flips face up; a further draw finishes the previous
+   * flight instantly. Once a card lands, it glows for GLOW_MS. Reduced motion
+   * skips the flight and keeps the glow.
    */
   private announceDraw(card: ZoneCard): void {
     if (this.reducedMotion()) {
       this.land(card.id);
       return;
     }
+    this.finishRuns('own');
     this.mark(this.arriving, card.id, true);
-    this.flightChain = this.flightChain.then(() => this.flyIn(card));
+    const run = this.beginRun('own', () => {
+      if (this.zones.mine().hand.some((c) => c.id === card.id)) this.land(card.id);
+      else this.mark(this.arriving, card.id, false);
+    });
+    void this.flyIn(card, run);
+  }
+
+  private beginRun(group: FlightRun['group'], onFinish: () => void): FlightRun {
+    const run: FlightRun = {
+      group,
+      done: false,
+      flightId: 0,
+      wake: () => undefined,
+      finish: () => {
+        if (run.done) return;
+        run.done = true;
+        run.wake();
+        this.runs.delete(run);
+        if (run.flightId) this.flights.update((all) => all.filter((f) => f.id !== run.flightId));
+        onFinish();
+      },
+    };
+    this.runs.add(run);
+    return run;
+  }
+
+  private finishRuns(group: FlightRun['group']): void {
+    for (const run of [...this.runs]) if (run.group === group) run.finish();
   }
 
   private land(id: string): void {
@@ -603,15 +638,15 @@ export class Zones implements OnDestroy {
     void this.sleep(GLOW_MS).then(() => this.mark(this.fresh, id, false));
   }
 
-  private async flyIn(card: ZoneCard): Promise<void> {
+  private async flyIn(card: ZoneCard, run: FlightRun): Promise<void> {
     await this.nextRender();
-    if (this.destroyed) return;
+    if (this.destroyed || run.done) return;
     const hand = this.zones.mine().hand;
     const index = hand.findIndex((c) => c.id === card.id);
     const target = this.hostEl.querySelector<HTMLElement>(`.hand-card[data-id="${card.id}"]`);
     const pile = this.hostEl.querySelector<HTMLElement>('.pile.deck');
     if (index >= 0 && target && pile) {
-      await this.fly(pile, target.getBoundingClientRect(), {
+      await this.fly(run, pile, target.getBoundingClientRect(), {
         src: card.src,
         name: card.name,
         w: target.offsetWidth,
@@ -619,8 +654,7 @@ export class Zones implements OnDestroy {
         rot: this.handRotation(index, hand.length),
       });
     }
-    if (index < 0) this.mark(this.arriving, card.id, false);
-    else this.land(card.id);
+    run.finish();
   }
 
   /** Opponents draw: a card back flies from their deck chip to their hand. */
@@ -630,29 +664,35 @@ export class Zones implements OnDestroy {
       this.oppSizes.set(p.uid, { hand: p.hand.length, deck: p.deck.length });
       if (!prev || this.reducedMotion()) continue;
       if (p.deck.length >= prev.deck || p.hand.length <= prev.hand) continue;
-      const count = Math.min(p.hand.length - prev.hand, MAX_OPP_FLIGHTS);
-      for (let i = 0; i < count; i++) {
-        this.flightChain = this.flightChain.then(() => this.flyBack(p.uid));
-      }
+      this.finishRuns('opp');
+      void this.flyBack(
+        p.uid,
+        this.beginRun('opp', () => undefined),
+      );
     }
   }
 
-  private async flyBack(uid: string): Promise<void> {
+  private async flyBack(uid: string, run: FlightRun): Promise<void> {
     await this.nextRender();
-    if (this.destroyed) return;
+    if (this.destroyed || run.done) return;
     const opp = this.hostEl.querySelector<HTMLElement>(`.opp[data-uid="${uid}"]`);
     const pile = opp?.querySelector<HTMLElement>('.mini.deck');
     const hand = opp?.querySelector<HTMLElement>('.opp-hand');
-    if (!pile || !hand) return;
+    if (!pile || !hand) {
+      run.finish();
+      return;
+    }
     const w = 3.6 * this.u();
     const h = w * CARD_RATIO;
     const rect = hand.getBoundingClientRect();
     const end = new DOMRect(rect.right - w, rect.top + (rect.height - h) / 2, w, h);
-    await this.fly(pile, end, { src: null, name: '', w, h, rot: 0 });
+    await this.fly(run, pile, end, { src: null, name: '', w, h, rot: 0 });
+    run.finish();
   }
 
   /** Run one flight from the centre of `from` to the rectangle `end`. */
   private async fly(
+    run: FlightRun,
     from: HTMLElement,
     end: DOMRect,
     card: Pick<Flight, 'src' | 'name' | 'w' | 'h' | 'rot'>,
@@ -669,9 +709,17 @@ export class Zones implements OnDestroy {
       dy: start.top + start.height / 2 - cy,
       s: Math.max(start.width / card.w, 0.2),
     };
+    run.flightId = flight.id;
     this.flights.update((all) => [...all, flight]);
-    await this.sleep(FLY_MS);
-    this.flights.update((all) => all.filter((f) => f.id !== flight.id));
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, FLY_MS);
+      this.timers.add(timer);
+      run.wake = () => {
+        clearTimeout(timer);
+        this.timers.delete(timer);
+        resolve();
+      };
+    });
   }
 
   protected shuffle(): void {

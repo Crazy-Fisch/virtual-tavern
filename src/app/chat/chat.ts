@@ -1,4 +1,13 @@
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  OnDestroy,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { P2pService } from '../p2p/p2p.service';
@@ -30,7 +39,7 @@ function loadCollapsed(): boolean {
   styleUrl: './chat.scss',
   standalone: true,
 })
-export class Chat {
+export class Chat implements OnDestroy {
   protected readonly room = inject(RoomService);
   protected readonly p2p = inject(P2pService);
   private readonly router = inject(Router);
@@ -77,6 +86,10 @@ export class Chat {
     });
   }
 
+  ngOnDestroy(): void {
+    clearTimeout(this.copyTimer);
+  }
+
   protected toggle(): void {
     const next = !this.collapsed();
     this.collapsed.set(next);
@@ -91,6 +104,41 @@ export class Chat {
   protected leave(): void {
     this.room.leave();
     void this.router.navigate(['/']);
+  }
+
+  /** True for a moment after the room code was copied. */
+  protected readonly copied = signal(false);
+  private copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  protected async copyCode(code: string): Promise<void> {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(code);
+      ok = true;
+    } catch {
+      ok = this.copyFallback(code);
+    }
+    if (!ok) return;
+    this.copied.set(true);
+    clearTimeout(this.copyTimer);
+    this.copyTimer = setTimeout(() => this.copied.set(false), 1500);
+  }
+
+  private copyFallback(code: string): boolean {
+    const input = document.createElement('input');
+    input.value = code;
+    input.setAttribute('readonly', '');
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.select();
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      input.remove();
+    }
   }
 
   protected send(e: Event): void {

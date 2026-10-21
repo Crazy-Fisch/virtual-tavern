@@ -22,6 +22,11 @@
 } @else {
   <div class="panel">
     <div class="head">
+      @if (room.currentRoom(); as r) {
+        <span class="room-name" [title]="r.name || 'Room'">{{ r.name || 'Room' }}</span>
+      }
+    </div>
+    <div class="head sub">
       <button
         type="button"
         class="fold"
@@ -33,10 +38,18 @@
         «
       </button>
       @if (room.currentRoom(); as r) {
-        <span class="room-name" [title]="r.name || 'Room'">{{ r.name || 'Room' }}</span>
         <span class="badge" title="Room code — share it to invite others">{{ r.code }}</span>
+        <button
+          type="button"
+          class="copy"
+          title="Copy room code"
+          aria-label="Copy room code"
+          (click)="copyCode(r.code)"
+        >
+          {{ copied() ? 'Copied' : 'Copy' }}
+        </button>
       }
-      <span class="badge">{{ p2p.peerCount() }} peer(s)</span>
+      <span class="badge peers">{{ p2p.peerCount() }} peer(s)</span>
       <button class="leave" (click)="leave()">Leave</button>
     </div>
     <div class="tabs">

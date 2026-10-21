@@ -4,15 +4,17 @@
   @for (p of zones.others(); track p.uid) {
     <div class="opp" [attr.data-uid]="p.uid">
       <span class="opp-name">{{ p.name }}</span>
-      <span class="opp-life" title="Life">♥ {{ p.life ?? '—' }}</span>
-      @if (p.poison > 0) {
-        <span
-          class="opp-poison"
-          [class.lethal]="p.poison >= poisonLethal"
-          title="Infect (poison) counters"
-          >☠ {{ p.poison }}</span
-        >
-      }
+      <div class="opp-stats">
+        <span class="opp-life" title="Life">♥ {{ p.life ?? '—' }}</span>
+        @if (p.poison > 0) {
+          <span
+            class="opp-poison"
+            [class.lethal]="p.poison >= poisonLethal"
+            title="Infect (poison) counters"
+            >☠ {{ p.poison }}</span
+          >
+        }
+      </div>
 
       <div class="opp-hand" [title]="p.hand.length + ' cards in hand'">
         @for (c of p.hand.slice(0, maxHand); track c.id) {
