@@ -36,7 +36,7 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
 
 - **`src/app/room/room.service.ts`** (`RoomService`) — the join/leave facade and source of
   truth for room state. Signals: `currentRoom`, `joined`, `messages`, `worldState`, `userId`,
-  `displayName`. `createRoom()` inserts an owned row (share code generated server-side);
+  `displayName`, `undoable`, `undoneIds`. `createRoom()` inserts an owned row (share code generated server-side);
   `joinByCode()` resolves code→room via the `get_room_by_code` security-definer RPC (rooms are
   unlistable; the room UUID is the capability). Entering a room loads persisted chat history +
   world snapshot from Postgres, subscribes to one realtime channel (`postgres_changes` on
@@ -65,7 +65,14 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   `cleanup_stale_rooms` (fired opportunistically on every join) deletes rooms untouched for a
   day — the backstop for tabs closed without leaving (which keeps the reload-resume flow
   alive, since a reload never closes the room). An unsynced presence state never triggers
-  deletion — the sweep handles those rooms instead.
+  deletion — the sweep handles those rooms instead. **Undo journal**: every own world write
+  records its pre-image (null = absent) and `sendAction()` stores the batch as a world object
+  `undo:<messageId>` (`{msg, t, by, before}`; silent writes such as life attach to the latest
+  action line shortly after). `undoable` lists the newest 50 action lines with an entry;
+  `undoTo(messageId)` folds those entries newest to oldest, restores the oldest pre-images in one
+  upsert plus one delete (not journaled itself), drops the consumed entries, records the undone
+  lines in the `undone:state` object (`undoneIds`, shown greyed out in History, since
+  `chat_messages` cannot be deleted) and posts "undid N action(s)". No SQL migration.
 
 - **`src/app/p2p/p2p.service.ts`** (`P2pService`) — WebRTC avatar layer over Trystero (Nostr
   strategy: peers discover via public relays, data flows P2P). Carries ONLY the `pos` and
@@ -272,7 +279,7 @@ what resolves every decklist entry against the card database, calls `loadDeck()`
 created with the shuffled deck), and starts prefetching the card images, so merely browsing
 decks never costs a download. `refreshOwnerName()` only renames zones that already exist
 (rejoin).
-**Draw animation** (Zones): `draw()` hides the drawn hand card (`arriving`), a decorative `.fly` copy flies from the deck pile to the card's measured slot and flips face up (`flights`, queued on `flightChain` so quick draws run in sequence), then the card glows for 1.5 s (`fresh`). Opponents' draws (deck shrinks while hand grows) fly a card back from their deck chip. `prefers-reduced-motion` skips the flight and keeps the glow.
+**Draw animation** (Zones): `draw()` hides the drawn hand card (`arriving`), a decorative `.fly` copy flies from the deck pile to the card's measured slot and flips face up (`flights`; a new draw finishes the previous flight at once via `finishRuns`, so quick draws never queue), then the card glows for 1.5 s (`fresh`). Opponents' draws (deck shrinks while hand grows) fly a card back from their deck chip. `prefers-reduced-motion` skips the flight and keeps the glow.
 
 **Looking at my own deck** is `src/app/zones/reveal.ts` (pure) plus the `RevealPanel` component
 (`reveal-panel/`), in two `RevealMode`s over one session model: **reveal** — scry the top n
@@ -449,7 +456,11 @@ with a constructor call only because its spawn `await`s the model load before to
 `Chat` (`src/app/chat/`) is the in-room panel docked left of the table (Tavern is a flex row, so the scene takes the width a fold frees; `collapsed` persisted in localStorage `virtual-tavern.chat-collapsed`, folded slim bar with an unread badge counting chat messages from others since the fold) and the game history: shows the room name and
 share code + peer count, and renders `room.messages()` split over two tabs — **Chat**
 (default) with the user-typed messages (own messages matched by auth uid, colored) and
-**History** with the `'action'`-kind game lines (plain white); the log stays pinned to the
+**History** with the `'action'`-kind game lines (plain white; undone lines grey and struck
+through). History lines in `room.undoable()` carry a ↶ button, and an "Undo last" button sits above
+the log; both open a `Dialog` confirmation ("Undo N action(s)? … This affects all players.") and only
+its Undo button calls `room.undoTo()`. The room name has its own row, the share code has a Copy
+button. The log stays pinned to the
 newest message of the active tab, and its
 Leave button calls `room.leave()` and routes back to `/`. Popups use the reusable `Dialog`
 (`src/app/shared/dialog/`), a modal that projects content via `<ng-content>` and emits `close`

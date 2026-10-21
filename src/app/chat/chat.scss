@@ -152,7 +152,90 @@ button {
 }
 
 .msg.action {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
   color: #fff;
+
+  .line {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &.undone {
+    color: #777;
+    text-decoration: line-through;
+  }
+}
+
+// Undo buttons stay out of the way until the line is hovered or focused.
+.undo {
+  flex: none;
+  padding: 0 0.4rem;
+  background: #333;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  opacity: 0;
+
+  &:hover {
+    background: #6c4cff;
+  }
+}
+
+.msg.action:hover .undo,
+.msg.action:focus-within .undo,
+.undo:focus-visible {
+  opacity: 1;
+}
+
+.history-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.undo-last {
+  padding: 0.2rem 0.55rem;
+  background: #333;
+  font-size: 0.75rem;
+
+  &:hover {
+    background: #4a4a55;
+  }
+}
+
+// Projected into app-dialog, so it stays in this component's style scope.
+.undo-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: #eee;
+
+  p {
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .cancel {
+    background: #333;
+
+    &:hover {
+      background: #4a4a55;
+    }
+  }
+
+  .confirm {
+    background: #c0392b;
+
+    &:hover {
+      background: #d44a3b;
+    }
+  }
 }
 
 .compose {

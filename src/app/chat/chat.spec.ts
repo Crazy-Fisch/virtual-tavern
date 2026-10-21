@@ -21,6 +21,9 @@ describe('Chat', () => {
       userId: signal('user-1'),
       sendChat: vi.fn(),
       leave: vi.fn(),
+      undoable: signal<ReadonlySet<string>>(new Set(['m2'])),
+      undoneIds: signal<ReadonlySet<string>>(new Set()),
+      undoTo: vi.fn(() => 1),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -36,7 +39,9 @@ describe('Chat', () => {
 
   const host = (fixture: { nativeElement: unknown }) => fixture.nativeElement as HTMLElement;
   const texts = (fixture: { nativeElement: unknown }) =>
-    [...host(fixture).querySelectorAll('.msg')].map((el) => el.textContent?.trim());
+    [...host(fixture).querySelectorAll('.msg')].map((el) =>
+      (el.querySelector('.line') ?? el).textContent?.trim(),
+    );
 
   it('opens on the Chat tab, showing only user-typed messages', () => {
     const { fixture } = setup();
@@ -51,5 +56,59 @@ describe('Chat', () => {
     historyTab.click();
     fixture.detectChanges();
     expect(texts(fixture)).toEqual(['Ana: played Water Worm']);
+  });
+
+  function openHistory(fixture: { nativeElement: unknown; detectChanges(): void }) {
+    const historyTab = [...host(fixture).querySelectorAll('.tab')].find((b) =>
+      b.textContent?.includes('History'),
+    ) as HTMLButtonElement;
+    historyTab.click();
+    fixture.detectChanges();
+  }
+
+  it('shows an undo button only on undoable action lines', () => {
+    const { fixture } = setup();
+    openHistory(fixture);
+    const btn = host(fixture).querySelector('.msg.action .undo') as HTMLButtonElement;
+    expect(btn.getAttribute('aria-label')).toBe('Undo back to before this action');
+  });
+
+  it('asks before undoing and only calls undoTo after confirming', () => {
+    const { fixture, room } = setup();
+    openHistory(fixture);
+    (host(fixture).querySelector('.undo') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const dialog =
+      document.body.querySelector('app-dialog') ?? host(fixture).querySelector('app-dialog');
+    expect(dialog?.textContent).toContain('Undo 1 action?');
+    expect(dialog?.textContent).toContain('This affects all players.');
+    expect(room.undoTo).not.toHaveBeenCalled();
+    (dialog!.querySelector('.confirm') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(room.undoTo).toHaveBeenCalledWith('m2');
+    expect(host(fixture).querySelector('app-dialog')).toBeNull();
+  });
+
+  it('cancel and Esc close the confirmation without undoing', () => {
+    const { fixture, room } = setup();
+    openHistory(fixture);
+    (host(fixture).querySelector('.undo-last') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (host(fixture).querySelector('.cancel') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(host(fixture).querySelector('app-dialog')).toBeNull();
+    (host(fixture).querySelector('.undo') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(host(fixture).querySelector('app-dialog')).toBeNull();
+    expect(room.undoTo).not.toHaveBeenCalled();
+  });
+
+  it('greys out undone lines', () => {
+    const { fixture, room } = setup();
+    room.undoneIds.set(new Set(['m2']));
+    openHistory(fixture);
+    expect(host(fixture).querySelector('.msg.action')?.classList).toContain('undone');
   });
 });

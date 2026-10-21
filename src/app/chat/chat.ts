@@ -12,6 +12,8 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { P2pService } from '../p2p/p2p.service';
 import { RoomService } from '../room/room.service';
+import { ChatMessage } from '../room/room.types';
+import { Dialog } from '../shared/dialog/dialog';
 
 const COLLAPSED_KEY = 'virtual-tavern.chat-collapsed';
 
@@ -34,7 +36,7 @@ function loadCollapsed(): boolean {
  */
 @Component({
   selector: 'app-chat',
-  imports: [FormsModule],
+  imports: [FormsModule, Dialog],
   templateUrl: './chat.html',
   styleUrl: './chat.scss',
   standalone: true,
@@ -53,6 +55,27 @@ export class Chat implements OnDestroy {
       .messages()
       .filter((m) => (this.tab() === 'history' ? m.kind === 'action' : m.kind !== 'action')),
   );
+
+  /** History line the user asked to undo back to; set while the confirmation is open. */
+  protected readonly undoTarget = signal<ChatMessage | null>(null);
+
+  /** Undoable action lines, oldest first. */
+  private readonly undoableLines = computed(() => {
+    const ids = this.room.undoable();
+    return this.room.messages().filter((m) => m.kind === 'action' && ids.has(m.id));
+  });
+
+  /** The newest undoable action line, target of the 'Undo last' button. */
+  protected readonly lastUndoable = computed(() => this.undoableLines().at(-1) ?? null);
+
+  /** How many actions confirming the open undo dialog would undo. */
+  protected readonly undoCount = computed(() => {
+    const target = this.undoTarget();
+    if (!target) return 0;
+    const lines = this.undoableLines();
+    const at = lines.findIndex((m) => m.id === target.id);
+    return at < 0 ? 0 : lines.length - at;
+  });
 
   /** Whether the panel is folded into the slim bar; persisted across reloads. */
   protected readonly collapsed = signal(loadCollapsed());
@@ -98,6 +121,16 @@ export class Chat implements OnDestroy {
     } catch {
       // storage unavailable: the fold just isn't remembered
     }
+  }
+
+  protected askUndo(m: ChatMessage): void {
+    this.undoTarget.set(m);
+  }
+
+  protected confirmUndo(): void {
+    const target = this.undoTarget();
+    this.undoTarget.set(null);
+    if (target) this.room.undoTo(target.id);
   }
 
   /** Leave the room and return to the menu. */

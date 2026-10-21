@@ -65,10 +65,28 @@
         History
       </button>
     </div>
+    @if (tab() === 'history' && lastUndoable(); as last) {
+      <div class="history-tools">
+        <button type="button" class="undo-last" (click)="askUndo(last)">↶ Undo last</button>
+      </div>
+    }
     <div #log class="log">
       @for (m of visible(); track m.id) {
         @if (m.kind === 'action') {
-          <div class="msg action">{{ m.name }}: {{ m.text }}</div>
+          <div class="msg action" [class.undone]="room.undoneIds().has(m.id)">
+            <span class="line">{{ m.name }}: {{ m.text }}</span>
+            @if (room.undoable().has(m.id)) {
+              <button
+                type="button"
+                class="undo"
+                title="Undo back to before this action"
+                aria-label="Undo back to before this action"
+                (click)="askUndo(m)"
+              >
+                ↶
+              </button>
+            }
+          </div>
         } @else {
           <div class="msg chat" [class.me]="m.from === room.userId()">
             <span class="who">{{ m.name }}</span
@@ -88,4 +106,19 @@
       <button type="submit">Send</button>
     </form>
   </div>
+}
+
+@if (undoTarget(); as target) {
+  <app-dialog heading="Undo" (close)="undoTarget.set(null)">
+    <div class="undo-confirm">
+      <p>
+        Undo {{ undoCount() }} action{{ undoCount() === 1 ? '' : 's' }}? The game returns to the
+        state before "{{ target.name }}: {{ target.text }}". This affects all players.
+      </p>
+      <div class="actions">
+        <button type="button" class="cancel" (click)="undoTarget.set(null)">Cancel</button>
+        <button type="button" class="confirm" (click)="confirmUndo()">Undo</button>
+      </div>
+    </div>
+  </app-dialog>
 }
