@@ -43,5 +43,12 @@ export type WorldObjectState = {
   t: number;
 };
 
+/** Undo journal entries: `undo:<messageId>` = `{msg, t, by, before: {objectId: data|null}}`. */
+export const UNDO_PREFIX = 'undo:';
+/** Message ids of history lines that were undone (greyed out): `{ids: string[]}`. */
+export const UNDONE_ID = 'undone:state';
+/** How many action lines stay undoable. */
+export const MAX_UNDO = 50;
+
 /** Map of shared world object id -> its state. */
 export type WorldState = Record<string, WorldObjectState>;

@@ -132,10 +132,10 @@ export class ZoneStore {
         this.seenRound = { roomId: room.id, n };
         return;
       }
-      if (n > this.seenRound.n) {
-        this.seenRound = { roomId: room.id, n };
-        untracked(() => this.resetForRound());
-      }
+      const rose = n > this.seenRound.n;
+      // Track a lowered n too (undo of a new round), or the next new round would not look like a rise.
+      this.seenRound = { roomId: room.id, n };
+      if (rose) untracked(() => this.resetForRound());
     });
   }
 

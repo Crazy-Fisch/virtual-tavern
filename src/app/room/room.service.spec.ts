@@ -456,6 +456,158 @@ describe('RoomService', () => {
     expect(p2p.leave).toHaveBeenCalled();
   });
 
+  describe('undo journal', () => {
+    const undoKeys = (s: RoomService) =>
+      Object.keys(s.worldState()).filter((id) => id.startsWith('undo:'));
+    const lastMsg = (s: RoomService) => s.messages().at(-1)!;
+    const remoteWorld = (
+      handlers: Record<string, (p: ChangePayload) => void>,
+      id: string,
+      data: unknown,
+      at: string,
+    ) =>
+      handlers['world_objects']!({
+        eventType: 'UPDATE',
+        new: { object_id: id, data, updated_by: 'u2', updated_at: at },
+      });
+
+    it('undoing a draw puts the card back on the deck and out of the hand', async () => {
+      const { service } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      service.setWorldObjects([
+        ['zone:user-1:deck', { cards: [{ id: 'a' }, { id: 'b' }] }],
+        ['zone:user-1:hand', { cards: [] }],
+      ]);
+      service.sendAction('joined the game');
+      service.setWorldObjects([
+        ['zone:user-1:deck', { cards: [{ id: 'b' }] }],
+        ['zone:user-1:hand', { cards: [{ id: 'a' }] }],
+      ]);
+      service.sendAction('drew a card');
+      const draw = lastMsg(service);
+      expect(service.undoable().has(draw.id)).toBe(true);
+
+      expect(service.undoTo(draw.id)).toBe(1);
+      expect(service.worldState()['zone:user-1:deck']?.data).toEqual({
+        cards: [{ id: 'a' }, { id: 'b' }],
+      });
+      expect(service.worldState()['zone:user-1:hand']?.data).toEqual({ cards: [] });
+      expect(lastMsg(service)).toMatchObject({ kind: 'action', text: 'undid 1 action' });
+      expect(service.undoneIds().has(draw.id)).toBe(true);
+      expect(service.undoable().has(draw.id)).toBe(false);
+      expect(undoKeys(service)).toHaveLength(1); // only the join entry is left
+    });
+
+    it('a card added by the undone action is removed again, in one upsert and one delete', async () => {
+      const { service, client } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      service.setWorldObject('card:keep', { name: 'Keep' });
+      service.sendAction('added Keep');
+      service.setWorldObject('card:new', { name: 'New' });
+      service.setWorldObject('card:keep', { name: 'Keep', tapped: true });
+      service.sendAction('added New and tapped Keep');
+      await flush();
+      const worldCalls = () => client.from.mock.calls.filter(([t]) => t === 'world_objects').length;
+      const before = worldCalls();
+
+      service.undoTo(lastMsg(service).id);
+      expect(service.worldState()['card:new']).toBeUndefined();
+      expect(service.worldState()['card:keep']?.data).toEqual({ name: 'Keep' });
+      await flush();
+      expect(worldCalls() - before).toBe(2); // restore upsert + delete (null pre-images and consumed entries)
+      expect(undoKeys(service)).toHaveLength(1);
+    });
+
+    it('keeps only the newest 50 entries; the 51st oldest is pruned', async () => {
+      const { service } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      const ids: string[] = [];
+      for (let i = 0; i < 51; i++) {
+        service.setWorldObject('card:c', { n: i });
+        service.sendAction(`move ${i}`);
+        ids.push(lastMsg(service).id);
+      }
+      expect(undoKeys(service)).toHaveLength(50);
+      expect(service.undoable().size).toBe(50);
+      expect(service.undoable().has(ids[0]!)).toBe(false);
+      expect(service.undoable().has(ids[1]!)).toBe(true);
+      expect(service.undoTo(ids[0]!)).toBe(0);
+      expect(service.worldState()['card:c']?.data).toEqual({ n: 50 });
+      expect(service.undoTo(ids[1]!)).toBe(50);
+      expect(service.worldState()['card:c']?.data).toEqual({ n: 0 });
+    });
+
+    it("undoing across two players folds both players' entries, the oldest pre-image winning", async () => {
+      const { service, handlers } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      remoteWorld(handlers, 'card:b', { name: 'old' }, '2026-07-17T10:00:00Z');
+      service.setWorldObject('card:a', { name: 'a1' });
+      service.sendAction('A');
+      const a = lastMsg(service);
+
+      // Player u2 changes card:b and posts a line with its journal entry.
+      remoteWorld(handlers, 'card:b', { name: 'new' }, '2026-07-17T10:00:10Z');
+      handlers['chat_messages']!({
+        new: {
+          id: 'm-u2',
+          sender_id: 'u2',
+          sender_name: 'Ana',
+          text: 'moved B',
+          kind: 'action',
+          created_at: '2026-07-17T10:00:10Z',
+        },
+      });
+      remoteWorld(
+        handlers,
+        'undo:m-u2',
+        { msg: 'm-u2', t: Date.now(), by: 'u2', before: { 'card:b': { name: 'old' } } },
+        '2026-07-17T10:00:11Z',
+      );
+
+      service.setWorldObject('card:a', { name: 'a2' });
+      service.sendAction('C');
+      expect([...service.undoable()]).toEqual([a.id, 'm-u2', lastMsg(service).id]);
+
+      // Undoing u2's line also takes my newer action back, but keeps A.
+      expect(service.undoTo('m-u2')).toBe(2);
+      expect(service.worldState()['card:a']?.data).toEqual({ name: 'a1' });
+      expect(service.worldState()['card:b']?.data).toEqual({ name: 'old' });
+      expect(service.undoable().has(a.id)).toBe(true);
+      expect(service.undoTo(a.id)).toBe(1);
+      expect(service.worldState()['card:a']).toBeUndefined();
+    });
+
+    it('silent writes are stored after a short delay on the latest action line', async () => {
+      vi.useFakeTimers();
+      const { service } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      service.setWorldObject('life:user-1', { life: 20, start: 20 });
+      service.sendAction('chose 20 life');
+      const line = lastMsg(service);
+
+      service.setWorldObject('life:user-1', { life: 19, start: 20 }); // silent bump
+      expect(undoKeys(service)).toHaveLength(1);
+      vi.advanceTimersByTime(2000);
+      expect(undoKeys(service)).toHaveLength(2);
+
+      service.undoTo(line.id);
+      expect(service.worldState()['life:user-1']).toBeUndefined();
+    });
+
+    it('silent writes before any action line wait for the first one', async () => {
+      vi.useFakeTimers();
+      const { service } = setup({ rpc: ROOM_RPC });
+      await service.joinByCode('ABC123', 'Tim');
+      service.setWorldObject('life:user-1', { life: 20 });
+      vi.advanceTimersByTime(5000);
+      expect(undoKeys(service)).toHaveLength(0);
+
+      service.sendAction('first');
+      const [entry] = undoKeys(service);
+      expect(service.worldState()[entry!]?.data['before']).toEqual({ 'life:user-1': null });
+    });
+  });
+
   describe('room lifecycle (perstistance.md)', () => {
     const closeCalls = (client: { rpc: ReturnType<typeof vi.fn> }) =>
       client.rpc.mock.calls.filter(([fn]) => fn === 'close_room');

@@ -277,6 +277,31 @@ describe('ZoneStore', () => {
     expect(store.mine().hand).toHaveLength(1);
   });
 
+  it('undoing a new round restores table and zones, and the next new round still resets', () => {
+    localStorage.clear();
+    TestBed.tick();
+    store.loadDeck([card('a', 'A'), card('b', 'B'), card('c', 'C')]);
+    store.draw();
+    room.setWorldObject('card:t1', { name: 'Water Worm' });
+    room.sendAction('played Water Worm');
+    const handBefore = store.mine().hand;
+    store.startNewRound();
+    TestBed.tick();
+    expect(store.mine().hand).toEqual([]);
+
+    expect(room.undoTo(room.actionIds.at(-1)!)).toBe(1);
+    TestBed.tick();
+    expect(store.round()).toBe(0);
+    expect(room.worldState()['card:t1']).toBeDefined();
+    expect(store.mine().hand).toEqual(handBefore);
+
+    store.startNewRound();
+    TestBed.tick();
+    expect(store.round()).toBe(1);
+    expect(store.mine().hand).toEqual([]);
+    expect(room.worldState()['card:t1']).toBeUndefined();
+  });
+
   it('without a remembered deck a new round sends me back to the deck picker', () => {
     store.loadDeck([card('a', 'A')]);
     localStorage.clear();

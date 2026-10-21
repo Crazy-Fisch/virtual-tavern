@@ -120,3 +120,9 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 - Colour tokens (`#6c4cff`, `#1b1b24`, `#2e2e3a`, ...) are repeated in every scss file: move them to CSS custom properties in styles.scss.
 - Button styles are copied per component (menu, decks, deck-editor, zones): extract shared button/input classes.
 - Add `aria-label`s to icon-only buttons in zones.html (life +/−, poison +/−) and `role="dialog"` to the shared Dialog.
+
+## Done: undo journal backend (virtual-tavern-update t2)
+- RoomService journals every own world write: pre-image per object id (first touch in the batch, `null` = absent) in a private `pending` map. `sendAction` stores it as world object `undo:<messageId>` = `{msg, t, by, before}`; silent writes (life, quiet returns, resets) are stored 2 s later as `undo:<latestActionId>~<uid><time>` on the latest action line, or wait for the first action line. Skipped prefixes: `undo:`, `undone:state`. Constants in room.types.ts (`UNDO_PREFIX`, `UNDONE_ID`, `MAX_UNDO`).
+- `undoable` (Set of message ids with an entry, newest 50), `undoneIds` (Set from `undone:state` `{ids}`, for greying out lines), `undoTo(messageId)` returns the number of actions undone (0 = not undoable). Restore = one setWorldObjects + one removeWorldObjects (not journaled), consumed entries deleted in the same remove, then the history line `undid N action(s)` (no entry). Pruned after every entry write (keeps entries of the newest 50 action lines; orphan entries older than 60 s go).
+- ZoneStore round effect now tracks a lowered `round:current.n` (undo) without resetting, so the next new round still resets.
+- FakeRoomService mirrors it (`actionIds`, `undoable`, `undoneIds`, `undoTo`; entries are kept out of its worldState, quiet writes attach to the latest action when undoTo runs).

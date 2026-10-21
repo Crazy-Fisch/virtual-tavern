@@ -5,7 +5,10 @@ import { SupabaseService } from '../supabase/supabase.service';
 import {
   ChatKind,
   ChatMessage,
+  MAX_UNDO,
   RoomInfo,
+  UNDONE_ID,
+  UNDO_PREFIX,
   WorldObjectData,
   WorldObjectState,
   WorldState,
@@ -17,6 +20,20 @@ const RESUME_KEY = 'virtual-tavern.resume';
 /** How often a joined client refreshes rooms.last_active (the keep-alive that
  * spares the room from the server-side stale sweep). */
 const HEARTBEAT_MS = 5 * 60_000;
+
+/** Journal debounce: silent writes (life, quiet returns) get their own entry after this idle time. */
+const JOURNAL_FLUSH_MS = 2000;
+/** An entry whose history line never showed up is dropped after this long. */
+const ORPHAN_ENTRY_MS = 60_000;
+const MAX_UNDONE_MARKS = 200;
+const UNDID_LINE = /^undid \d+ actions?$/;
+
+type JournalEntry = {
+  id: string;
+  msg: string;
+  t: number;
+  before: Record<string, WorldObjectData | null>;
+};
 
 type ResumeState = { code: string; displayName: string };
 
@@ -81,6 +98,11 @@ export class RoomService {
   /** World mutations dispatch in order — a later request can never overtake an
    * earlier one and scramble the end state (e.g. two quick draws). */
   private writeChain: Promise<void> = Promise.resolve();
+  /** Pre-images (data before my first write, null = absent) not yet stored in an undo entry. */
+  private readonly pending = new Map<string, WorldObjectData | null>();
+  private flushTimer?: ReturnType<typeof setTimeout>;
+  /** True while undoTo writes the restored state, so the restore is not journaled itself. */
+  private restoring = false;
 
   readonly currentRoom = this._currentRoom.asReadonly();
   readonly joined = computed(() => this._currentRoom() !== null);
@@ -101,6 +123,23 @@ export class RoomService {
   });
   /** Yaw giving cards I spawn their upright orientation for my table side. */
   readonly seatYaw = computed(() => (this.isRoomOwner() ? 0 : Math.PI));
+
+  private readonly messageIndex = computed(
+    () => new Map(this._messages().map((m, i) => [m.id, i] as const)),
+  );
+  /** Ids of history lines the game can be reset to (their undo entry exists); the newest MAX_UNDO only. */
+  readonly undoable = computed<ReadonlySet<string>>(() => {
+    const index = this.messageIndex();
+    const msgs = new Set<string>();
+    for (const e of this.journalEntries()) if (index.has(e.msg)) msgs.add(e.msg);
+    const ordered = [...msgs].sort((a, b) => index.get(a)! - index.get(b)!);
+    return new Set(ordered.slice(-MAX_UNDO));
+  });
+  /** Ids of history lines that were undone (they stay in the log, greyed out). */
+  readonly undoneIds = computed<ReadonlySet<string>>(() => {
+    const ids = this._world()[UNDONE_ID]?.data['ids'];
+    return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+  });
 
   /** Create an owned room (share code generated server-side) and enter it. Returns an error message or null. */
   async createRoom(roomName: string, displayName: string): Promise<string | null> {
@@ -167,7 +206,55 @@ export class RoomService {
    * Callers phrase `text` as a verb phrase, e.g. "added Water Worm".
    */
   sendAction(text: string): void {
-    this.send(text, 'action');
+    const id = this.send(text, 'action');
+    if (id) this.writeEntry(`${UNDO_PREFIX}${id}`, id);
+  }
+
+  /**
+   * Reset the shared game to the moment just before the history line `messageId`:
+   * every undo entry of that line and newer ones is folded newest to oldest (the
+   * oldest pre-image wins per object), applied in ONE upsert plus ONE delete that
+   * are not journaled themselves, and the consumed entries are deleted. The undone
+   * lines stay (chat_messages has no delete policy) and are marked in `undoneIds`.
+   * Returns the number of actions undone (0 when the line is not undoable).
+   */
+  undoTo(messageId: string): number {
+    const room = this._currentRoom();
+    if (!room || !this.supabase.userId()) return 0;
+    this.flushQuiet();
+    if (!this.undoable().has(messageId)) return 0;
+    const index = this.messageIndex();
+    const target = index.get(messageId)!;
+    const entries = this.journalEntries()
+      .filter((e) => (index.get(e.msg) ?? -1) >= target)
+      .sort((a, b) => index.get(a.msg)! - index.get(b.msg)! || a.t - b.t);
+    const restore = new Map<string, WorldObjectData | null>();
+    for (let i = entries.length - 1; i >= 0; i--) {
+      for (const [id, data] of Object.entries(entries[i]!.before)) {
+        if (!id.startsWith(UNDO_PREFIX) && id !== UNDONE_ID) restore.set(id, data);
+      }
+    }
+    const marks = this._messages()
+      .slice(target)
+      .filter((m) => m.kind === 'action' && !UNDID_LINE.test(m.text))
+      .map((m) => m.id);
+    const undone = [...this.undoneIds(), ...marks].slice(-MAX_UNDONE_MARKS);
+    const upserts: [string, WorldObjectData][] = [[UNDONE_ID, { ids: undone }]];
+    const removals = entries.map((e) => e.id);
+    for (const [id, data] of restore) {
+      if (data) upserts.push([id, data]);
+      else removals.push(id);
+    }
+    this.restoring = true;
+    try {
+      this.setWorldObjects(upserts);
+      this.removeWorldObjects(removals);
+    } finally {
+      this.restoring = false;
+    }
+    const n = new Set(entries.map((e) => e.msg)).size;
+    this.send(`undid ${n} action${n === 1 ? '' : 's'}`, 'action');
+    return n;
   }
 
   /** Upsert a shared world object; the DB trigger stamps the authoritative timestamp. */
@@ -188,6 +275,7 @@ export class RoomService {
     const room = this._currentRoom();
     const by = this.supabase.userId();
     if (!room || !by || entries.length === 0) return;
+    this.journal(entries.map(([id]) => id));
     for (const [id, data] of entries) {
       this.beginWrite(id);
       // Force: the user's own action must show locally even if a skewed clock
@@ -230,6 +318,7 @@ export class RoomService {
   removeWorldObject(id: string): void {
     const room = this._currentRoom();
     if (!room) return;
+    this.journal([id]);
     this.beginWrite(id);
     this._world.update((w) => {
       const { [id]: _, ...rest } = w;
@@ -256,6 +345,7 @@ export class RoomService {
     const room = this._currentRoom();
     if (!room || ids.length === 0) return;
     const gone = new Set(ids);
+    this.journal(gone);
     for (const id of gone) this.beginWrite(id);
     this._world.update((w) =>
       Object.fromEntries(Object.entries(w).filter(([id]) => !gone.has(id))),
@@ -275,6 +365,78 @@ export class RoomService {
         await this.resyncObjects(room.id, [...gone]);
       }
     });
+  }
+
+  /** Remember the state of each object before my first write in this journal batch. */
+  private journal(ids: Iterable<string>): void {
+    if (this.restoring || !this._currentRoom()) return;
+    const world = this._world();
+    let added = false;
+    for (const id of ids) {
+      if (id.startsWith(UNDO_PREFIX) || id === UNDONE_ID || this.pending.has(id)) continue;
+      this.pending.set(id, world[id]?.data ?? null);
+      added = true;
+    }
+    if (added && this.flushTimer === undefined) {
+      this.flushTimer = setTimeout(() => this.flushQuiet(), JOURNAL_FLUSH_MS);
+    }
+  }
+
+  /** Writes with no history line of their own go to an extra entry of the latest action line. */
+  private flushQuiet(): void {
+    clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
+    if (this.pending.size === 0) return;
+    const anchor = this._messages().filter((m) => m.kind === 'action').at(-1);
+    // No action line yet: stay pending, the next sendAction stores them.
+    if (!anchor) return;
+    const uid = (this.supabase.userId() ?? '').slice(0, 8);
+    this.writeEntry(`${UNDO_PREFIX}${anchor.id}~${uid}${Date.now().toString(36)}`, anchor.id);
+  }
+
+  /** Store the pending pre-images as undo entry `entryId` of history line `msg`, then prune. */
+  private writeEntry(entryId: string, msg: string): void {
+    const by = this.supabase.userId();
+    clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
+    if (!by) return;
+    const before = Object.fromEntries(this.pending);
+    this.pending.clear();
+    this.setWorldObject(entryId, { msg, t: Date.now(), by, before });
+    this.prune();
+  }
+
+  private journalEntries(): JournalEntry[] {
+    const out: JournalEntry[] = [];
+    for (const [id, st] of Object.entries(this._world())) {
+      if (!id.startsWith(UNDO_PREFIX)) continue;
+      const { msg, t, before } = st.data;
+      if (typeof msg !== 'string' || typeof t !== 'number') continue;
+      if (typeof before !== 'object' || before === null) continue;
+      out.push({ id, msg, t, before: before as JournalEntry['before'] });
+    }
+    return out;
+  }
+
+  /** Keep the entries of the newest MAX_UNDO action lines; any client may prune. */
+  private prune(): void {
+    const index = this.messageIndex();
+    const now = Date.now();
+    const drop: string[] = [];
+    const byMsg = new Map<string, string[]>();
+    for (const e of this.journalEntries()) {
+      if (!index.has(e.msg)) {
+        // The history line may just not have arrived yet; only old orphans go.
+        if (now - e.t > ORPHAN_ENTRY_MS) drop.push(e.id);
+        continue;
+      }
+      byMsg.set(e.msg, [...(byMsg.get(e.msg) ?? []), e.id]);
+    }
+    const ordered = [...byMsg.keys()].sort((a, b) => index.get(a)! - index.get(b)!);
+    for (const msg of ordered.slice(0, Math.max(0, ordered.length - MAX_UNDO))) {
+      drop.push(...byMsg.get(msg)!);
+    }
+    this.removeWorldObjects(drop);
   }
 
   private beginWrite(id: string): void {
@@ -343,6 +505,9 @@ export class RoomService {
     this._messages.set([]);
     this._world.set({});
     this.pendingWrites.clear();
+    this.pending.clear();
+    clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
     // The last player out closes the room: the row and — via the FK cascades —
     // all its chat/history messages and world objects leave the database.
     if (lastOut && room) void this.rpcQuiet('close_room', { p_room_id: room.id });
@@ -368,11 +533,11 @@ export class RoomService {
     );
   }
 
-  private send(text: string, kind: ChatKind): void {
+  private send(text: string, kind: ChatKind): string | null {
     const trimmed = text.trim();
     const room = this._currentRoom();
     const from = this.supabase.userId();
-    if (!trimmed || !room || !from) return;
+    if (!trimmed || !room || !from) return null;
     const msg: ChatMessage = {
       id: crypto.randomUUID(),
       from,
@@ -389,6 +554,7 @@ export class RoomService {
       .then(({ error }) => {
         if (error) this._messages.update((m) => m.filter((x) => x.id !== msg.id));
       });
+    return msg.id;
   }
 
   private async enterRoom(room: RoomInfo, displayName: string): Promise<string | null> {
