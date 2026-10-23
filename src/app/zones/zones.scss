@@ -768,6 +768,11 @@ button.mini {
   pointer-events: none;
   perspective: calc(60 * var(--u));
   animation: fly-in 0.6s cubic-bezier(0.25, 0.7, 0.25, 1) both;
+  // The landing spot slides when the hand re-fans mid-flight (--tx/--ty/--rot are @property in styles.scss).
+  transition:
+    --tx 0.25s ease-out,
+    --ty 0.25s ease-out,
+    --rot 0.25s ease-out;
 }
 
 @keyframes fly-in {
@@ -775,7 +780,7 @@ button.mini {
     transform: translate(var(--dx), var(--dy)) scale(var(--s)) rotate(0deg);
   }
   to {
-    transform: translate(0, 0) scale(1) rotate(var(--rot));
+    transform: translate(var(--tx), var(--ty)) scale(1) rotate(var(--rot));
   }
 }
 

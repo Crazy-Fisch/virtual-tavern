@@ -32,3 +32,22 @@ body {
 :where(button:disabled) {
   cursor: default;
 }
+
+/* Typed so a draw flight's landing spot can transition while the hand re-fans (zones.scss .fly). */
+@property --tx {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --ty {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --rot {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}

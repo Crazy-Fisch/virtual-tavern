@@ -64,9 +64,14 @@ const FLY_MS = 600;
 const GLOW_MS = 1500;
 const CARD_RATIO = 88 / 63;
 
+/** Gap between the flights of one batched opponent draw, and their cap. */
+const OPP_STAGGER_MS = 80;
+const MAX_OPP_FLIGHTS = 5;
+
 /** One running flight; finish() ends it at once (removes the card, runs its landing). */
 interface FlightRun {
   group: 'own' | 'opp';
+  cardId: string | null;
   done: boolean;
   flightId: number;
   wake: () => void;
@@ -86,6 +91,9 @@ type Flight = {
   dy: number;
   s: number;
   rot: number;
+  /** Shift of the landing spot after the hand re-fanned mid-flight. */
+  tx: number;
+  ty: number;
 };
 
 /** Life totals offered before a player has picked a starting total. */
@@ -170,7 +178,7 @@ export class Zones implements OnDestroy {
   protected readonly fresh = signal<ReadonlySet<string>>(new Set());
   /** Cards currently flying from a deck to a hand. */
   protected readonly flights = signal<Flight[]>([]);
-  /** Running flights; a new flight of the same group finishes the previous one at once. */
+  /** Running flights; draws fly side by side and each one ends on its own. */
   private readonly runs = new Set<FlightRun>();
   private flightSeq = 0;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
@@ -221,11 +229,21 @@ export class Zones implements OnDestroy {
       const others = this.zones.others();
       untracked(() => this.watchOpponents(others));
     });
+    effect(() => {
+      const hand = this.zones.mine().hand;
+      untracked(() => void this.syncOwnFlights(hand));
+    });
     for (const target of this.dropTargets) this.interactions.registerDropTarget(target);
   }
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    for (const run of this.runs) {
+      run.done = true;
+      run.wake();
+    }
+    this.runs.clear();
+    this.flights.set([]);
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
     this.clearPendingDrag();
@@ -591,27 +609,59 @@ export class Zones implements OnDestroy {
 
   /**
    * My draw: the card stays invisible in the hand while a copy flies in from
-   * the deck pile and flips face up; a further draw finishes the previous
-   * flight instantly. Once a card lands, it glows for GLOW_MS. Reduced motion
-   * skips the flight and keeps the glow.
+   * the deck pile and flips face up. Every draw starts its own flight at
+   * once, so quick draws fly side by side; a flight whose card leaves the hand
+   * ends alone (syncOwnFlights). Once a card lands, it glows for GLOW_MS.
+   * Reduced motion skips the flight and keeps the glow.
    */
   private announceDraw(card: ZoneCard): void {
     if (this.reducedMotion()) {
       this.land(card.id);
       return;
     }
-    this.finishRuns('own');
     this.mark(this.arriving, card.id, true);
-    const run = this.beginRun('own', () => {
+    const run = this.beginRun('own', card.id, () => {
       if (this.zones.mine().hand.some((c) => c.id === card.id)) this.land(card.id);
       else this.mark(this.arriving, card.id, false);
     });
     void this.flyIn(card, run);
   }
 
-  private beginRun(group: FlightRun['group'], onFinish: () => void): FlightRun {
+  /**
+   * The hand changed: end the flights of cards that left it, and re-aim the
+   * others at where their card sits now (the fan re-spreads when cards come or go).
+   */
+  private async syncOwnFlights(hand: readonly ZoneCard[]): Promise<void> {
+    const own = [...this.runs].filter((run) => run.group === 'own');
+    if (own.length === 0) return;
+    for (const run of own) {
+      if (!hand.some((c) => c.id === run.cardId)) run.finish();
+    }
+    await this.nextRender();
+    if (this.destroyed) return;
+    const current = this.zones.mine().hand;
+    this.flights.update((all) =>
+      all.map((f) => {
+        const run = [...this.runs].find((r) => r.group === 'own' && r.flightId === f.id);
+        if (!run || run.done) return f;
+        const index = current.findIndex((c) => c.id === run.cardId);
+        const target = this.hostEl.querySelector<HTMLElement>(`.hand-card[data-id="${run.cardId}"]`);
+        if (index < 0 || !target) return f;
+        const rect = target.getBoundingClientRect();
+        return {
+          ...f,
+          tx: rect.left + rect.width / 2 - (f.x + f.w / 2),
+          ty: rect.top + rect.height / 2 - (f.y + f.h / 2),
+          rot: this.handRotation(index, current.length),
+        };
+      }),
+    );
+  }
+
+  private beginRun(group: FlightRun['group'], cardId: string | null, onFinish: () => void): FlightRun {
     const run: FlightRun = {
       group,
+      cardId,
       done: false,
       flightId: 0,
       wake: () => undefined,
@@ -626,10 +676,6 @@ export class Zones implements OnDestroy {
     };
     this.runs.add(run);
     return run;
-  }
-
-  private finishRuns(group: FlightRun['group']): void {
-    for (const run of [...this.runs]) if (run.group === group) run.finish();
   }
 
   private land(id: string): void {
@@ -663,16 +709,15 @@ export class Zones implements OnDestroy {
       const prev = this.oppSizes.get(p.uid);
       this.oppSizes.set(p.uid, { hand: p.hand.length, deck: p.deck.length });
       if (!prev || this.reducedMotion()) continue;
-      if (p.deck.length >= prev.deck || p.hand.length <= prev.hand) continue;
-      this.finishRuns('opp');
-      void this.flyBack(
-        p.uid,
-        this.beginRun('opp', () => undefined),
-      );
+      const drawn = Math.min(p.hand.length - prev.hand, prev.deck - p.deck.length);
+      for (let i = 0; i < Math.min(drawn, MAX_OPP_FLIGHTS); i++) {
+        void this.flyBack(p.uid, this.beginRun('opp', null, () => undefined), i * OPP_STAGGER_MS);
+      }
     }
   }
 
-  private async flyBack(uid: string, run: FlightRun): Promise<void> {
+  private async flyBack(uid: string, run: FlightRun, delay: number): Promise<void> {
+    if (delay > 0) await this.sleep(delay);
     await this.nextRender();
     if (this.destroyed || run.done) return;
     const opp = this.hostEl.querySelector<HTMLElement>(`.opp[data-uid="${uid}"]`);
@@ -708,6 +753,8 @@ export class Zones implements OnDestroy {
       dx: start.left + start.width / 2 - cx,
       dy: start.top + start.height / 2 - cy,
       s: Math.max(start.width / card.w, 0.2),
+      tx: 0,
+      ty: 0,
     };
     run.flightId = flight.id;
     this.flights.update((all) => [...all, flight]);

@@ -279,7 +279,7 @@ what resolves every decklist entry against the card database, calls `loadDeck()`
 created with the shuffled deck), and starts prefetching the card images, so merely browsing
 decks never costs a download. `refreshOwnerName()` only renames zones that already exist
 (rejoin).
-**Draw animation** (Zones): `draw()` hides the drawn hand card (`arriving`), a decorative `.fly` copy flies from the deck pile to the card's measured slot and flips face up (`flights`; a new draw finishes the previous flight at once via `finishRuns`, so quick draws never queue), then the card glows for 1.5 s (`fresh`). Opponents' draws (deck shrinks while hand grows) fly a card back from their deck chip. `prefers-reduced-motion` skips the flight and keeps the glow.
+**Draw animation** (Zones): `draw()` hides the drawn hand card (`arriving`), a decorative `.fly` copy flies from the deck pile to the card's measured slot and flips face up (`flights`), then the card glows for 1.5 s (`fresh`). Every draw starts its own flight at once, so quick draws fly concurrently (no queue, nothing is finished early); an effect on the hand (`syncOwnFlights`) re-aims running flights at their card's new slot when the fan re-spreads (`tx`/`ty`/`rot`, transitioned through the `@property` vars in `styles.scss`) and ends only the flight of a card that left the hand. Opponents' draws (deck shrinks while hand grows by k) fly one card back per drawn card from their deck chip (max 5, staggered 80 ms). `prefers-reduced-motion` skips the flight and keeps the glow.
 
 **Looking at my own deck** is `src/app/zones/reveal.ts` (pure) plus the `RevealPanel` component
 (`reveal-panel/`), in two `RevealMode`s over one session model: **reveal** — scry the top n
