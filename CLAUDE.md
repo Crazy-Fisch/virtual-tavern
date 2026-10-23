@@ -72,7 +72,11 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   `undoTo(messageId)` folds those entries newest to oldest, restores the oldest pre-images in one
   upsert plus one delete (not journaled itself), drops the consumed entries, records the undone
   lines in the `undone:state` object (`undoneIds`, shown greyed out in History, since
-  `chat_messages` cannot be deleted) and posts "undid N action(s)". No SQL migration.
+  `chat_messages` cannot be deleted) and posts "undid N action(s)". **History barrier**: a new
+  round calls `resetHistory(msgId)`, which stores the world object `history:start` `{msgId, t}`
+  (`historyStart`, never journaled) and deletes all `undo:` entries and `undone:state`; `undoable`,
+  `undoTo` and pruning only count lines strictly after the barrier line, so no state of an earlier
+  game can be restored. No SQL migration.
 
 - **`src/app/p2p/p2p.service.ts`** (`P2pService`) — WebRTC avatar layer over Trystero (Nostr
   strategy: peers discover via public relays, data flows P2P). Carries ONLY the `pos` and
@@ -456,8 +460,10 @@ with a constructor call only because its spawn `await`s the model load before to
 `Chat` (`src/app/chat/`) is the in-room panel docked left of the table (Tavern is a flex row, so the scene takes the width a fold frees; `collapsed` persisted in localStorage `virtual-tavern.chat-collapsed`, folded slim bar with an unread badge counting chat messages from others since the fold) and the game history: shows the room name and
 share code + peer count, and renders `room.messages()` split over two tabs — **Chat**
 (default) with the user-typed messages (own messages matched by auth uid, colored) and
-**History** with the `'action'`-kind game lines (plain white; undone lines grey and struck
-through). History lines in `room.undoable()` carry a ↶ button, and an "Undo last" button sits above
+**History** with the `'action'`-kind game lines since the latest new round (from the
+`room.historyStart()` barrier line on, matched by message id, fallback by time `t`; the "New round
+started" line is the first one; plain white; undone lines grey and struck through). The Chat tab
+keeps all typed messages. History lines in `room.undoable()` carry a ↶ button, and an "Undo last" button sits above
 the log; both open a `Dialog` confirmation ("Undo N action(s)? … This affects all players.") and only
 its Undo button calls `room.undoTo()`. The room name has its own row, the share code has a Copy
 button. The log stays pinned to the

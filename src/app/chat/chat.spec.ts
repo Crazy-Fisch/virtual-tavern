@@ -24,6 +24,7 @@ describe('Chat', () => {
       undoable: signal<ReadonlySet<string>>(new Set(['m2'])),
       undoneIds: signal<ReadonlySet<string>>(new Set()),
       undoTo: vi.fn(() => 1),
+      historyStart: signal<{ msgId: string; t: number } | null>(null),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -65,6 +66,31 @@ describe('Chat', () => {
     historyTab.click();
     fixture.detectChanges();
   }
+
+  it('History tab hides lines before the latest new round, Chat tab keeps all messages', () => {
+    const { fixture, room } = setup();
+    room.messages.set([
+      { id: 'a1', from: 'user-1', name: 'Tim', text: 'old action', kind: 'action', t: 1 },
+      { id: 'c1', from: 'user-1', name: 'Tim', text: 'hello', kind: 'chat', t: 2 },
+      { id: 'a2', from: 'user-1', name: 'Tim', text: 'New round started', kind: 'action', t: 3 },
+      { id: 'a3', from: 'user-2', name: 'Ana', text: 'drew a card', kind: 'action', t: 4 },
+    ]);
+    room.historyStart.set({ msgId: 'a2', t: 3 });
+    room.undoable.set(new Set(['a3']));
+    fixture.detectChanges();
+    expect(texts(fixture)).toEqual(['Timhello']);
+    openHistory(fixture);
+    expect(texts(fixture)).toEqual(['Tim: New round started', 'Ana: drew a card']);
+    expect(host(fixture).querySelectorAll('.msg.action .undo').length).toBe(1);
+
+    room.historyStart.set({ msgId: 'gone', t: 4 });
+    fixture.detectChanges();
+    expect(texts(fixture)).toEqual(['Ana: drew a card']);
+
+    room.undoable.set(new Set());
+    fixture.detectChanges();
+    expect(host(fixture).querySelector('.undo-last')).toBeNull();
+  });
 
   it('shows an undo button only on undoable action lines', () => {
     const { fixture } = setup();

@@ -49,12 +49,16 @@ export class Chat implements OnDestroy {
   /** Which log is shown; chat is the default. */
   protected readonly tab = signal<'chat' | 'history'>('chat');
 
-  /** The messages of the active tab: typed chat, or the action history. */
-  protected readonly visible = computed(() =>
-    this.room
-      .messages()
-      .filter((m) => (this.tab() === 'history' ? m.kind === 'action' : m.kind !== 'action')),
-  );
+  /** The messages of the active tab: typed chat, or the action history since the last new round (the barrier line included). */
+  protected readonly visible = computed(() => {
+    const all = this.room.messages();
+    if (this.tab() !== 'history') return all.filter((m) => m.kind !== 'action');
+    const barrier = this.room.historyStart();
+    const at = barrier ? all.findIndex((m) => m.id === barrier.msgId) : -1;
+    return all.filter(
+      (m, i) => m.kind === 'action' && (!barrier || (at >= 0 ? i >= at : m.t >= barrier.t)),
+    );
+  });
 
   /** History line the user asked to undo back to; set while the confirmation is open. */
   protected readonly undoTarget = signal<ChatMessage | null>(null);
