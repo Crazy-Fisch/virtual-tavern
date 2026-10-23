@@ -19,4 +19,8 @@ Das Spielen läuft wie in echt, Spieler sind selbst verantwortlich sich an die R
 Die UI ist intuitiv und lässt sich auch mit Hotkeys effizient benutzten.
 Eine Liste der Hotkeys kann man im Hauptmenu unter "Settings" finden oder jederzeit in einem Spiel über den Button "Hotkeys".
 
+## Project Infos
+Das Project ist zum größten Teil mit KI erstellt worden (Claude Code).
+Ich habe ein par 3D Modelle erstellt, mehr nicht.
+
 
