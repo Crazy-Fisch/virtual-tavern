@@ -161,7 +161,8 @@ export class ZoneStore {
    * the table's cards and items are cleared for everyone and the round marker
    * is bumped, which makes every client — this one included — reset its own
    * zones and life from the deck it chose (`resetForRound`). Room, players
-   * and decks stay.
+   * and decks stay. The history is cleared as well: the round line becomes the
+   * history barrier, so nothing of the previous game can be undone.
    */
   startNewRound(): void {
     const uid = this.room.userId();
@@ -169,9 +170,12 @@ export class ZoneStore {
     const table = Object.keys(this.room.worldState()).filter(
       (id) => id.startsWith(CARD_PREFIX) || id.startsWith(ITEM_PREFIX),
     );
-    this.room.removeWorldObjects(table);
-    this.room.setWorldObject(ROUND_ID, { n: this.round() + 1, startedBy: uid });
-    this.room.sendAction('New round started');
+    this.room.withoutJournal(() => {
+      this.room.removeWorldObjects(table);
+      this.room.setWorldObject(ROUND_ID, { n: this.round() + 1, startedBy: uid });
+    });
+    const line = this.room.sendAction('New round started');
+    if (line) this.room.resetHistory(line);
   }
 
   /**
@@ -184,19 +188,21 @@ export class ZoneStore {
     const uid = this.room.userId();
     if (!uid || !this.hasMine()) return;
     const deck = this.recallDeck();
-    if (deck) {
-      this.writeZones([
-        ['hand', []],
-        ['graveyard', []],
-        ['exile', []],
-        ['deck', shuffled(deck.map((c) => ({ ...c, id: crypto.randomUUID() })))],
-      ]);
-      const start = this.room.worldState()[lifeId(uid)]?.data['start'];
-      if (typeof start === 'number')
-        this.room.setWorldObject(lifeId(uid), { life: start, start, poison: 0 });
-    } else {
-      this.room.removeWorldObjects([...ZONE_KINDS.map((k) => zoneId(uid, k)), lifeId(uid)]);
-    }
+    this.room.withoutJournal(() => {
+      if (deck) {
+        this.writeZones([
+          ['hand', []],
+          ['graveyard', []],
+          ['exile', []],
+          ['deck', shuffled(deck.map((c) => ({ ...c, id: crypto.randomUUID() })))],
+        ]);
+        const start = this.room.worldState()[lifeId(uid)]?.data['start'];
+        if (typeof start === 'number')
+          this.room.setWorldObject(lifeId(uid), { life: start, start, poison: 0 });
+      } else {
+        this.room.removeWorldObjects([...ZONE_KINDS.map((k) => zoneId(uid, k)), lifeId(uid)]);
+      }
+    });
   }
 
   private deckKey(): string | null {

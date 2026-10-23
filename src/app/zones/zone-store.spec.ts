@@ -277,29 +277,53 @@ describe('ZoneStore', () => {
     expect(store.mine().hand).toHaveLength(1);
   });
 
-  it('undoing a new round restores table and zones, and the next new round still resets', () => {
+  it('a new round is a history barrier: nothing before it can be undone', () => {
     localStorage.clear();
     TestBed.tick();
     store.loadDeck([card('a', 'A'), card('b', 'B'), card('c', 'C')]);
     store.draw();
     room.setWorldObject('card:t1', { name: 'Water Worm' });
-    room.sendAction('played Water Worm');
-    const handBefore = store.mine().hand;
-    store.startNewRound();
-    TestBed.tick();
-    expect(store.mine().hand).toEqual([]);
-
-    expect(room.undoTo(room.actionIds.at(-1)!)).toBe(1);
-    TestBed.tick();
-    expect(store.round()).toBe(0);
-    expect(room.worldState()['card:t1']).toBeDefined();
-    expect(store.mine().hand).toEqual(handBefore);
+    const played = room.sendAction('played Water Worm');
+    expect(room.undoable().has(played)).toBe(true);
 
     store.startNewRound();
     TestBed.tick();
+    const barrier = room.actionIds.at(-1)!;
+
+    expect(room.historyStart()?.msgId).toBe(barrier);
+    expect(room.undoable().size).toBe(0);
+    expect(room.undoneIds().size).toBe(0);
+    expect(room.undoTo(played)).toBe(0);
+    expect(room.undoTo(barrier)).toBe(0);
     expect(store.round()).toBe(1);
     expect(store.mine().hand).toEqual([]);
     expect(room.worldState()['card:t1']).toBeUndefined();
+  });
+
+  it('the reset of a round started by another client creates no undo point; later actions are undoable', () => {
+    localStorage.clear();
+    TestBed.tick();
+    store.loadDeck([card('a', 'A'), card('b', 'B'), card('c', 'C')]);
+    store.setLife(20);
+    store.draw();
+    const old = room.sendAction('old action');
+
+    const barrier = room.sendAction('New round started');
+    room.resetHistory(barrier);
+    room.withoutJournal(() => room.setWorldObject('round:current', { n: 1, startedBy: 'user-2' }));
+    TestBed.tick();
+    expect(store.mine().hand).toEqual([]);
+    expect(room.undoable().size).toBe(0);
+    expect(room.undoTo(old)).toBe(0);
+    expect(store.mine().deck).toHaveLength(3);
+
+    store.draw();
+    const drew = room.actionIds.at(-1)!;
+    expect(room.undoable().has(drew)).toBe(true);
+    expect(room.undoTo(drew)).toBe(1);
+    expect(store.mine().hand).toEqual([]);
+    expect(store.mine().deck).toHaveLength(3);
+    expect(room.undoTo(old)).toBe(0);
   });
 
   it('without a remembered deck a new round sends me back to the deck picker', () => {

@@ -47,6 +47,8 @@ export type WorldObjectState = {
 export const UNDO_PREFIX = 'undo:';
 /** Message ids of history lines that were undone (greyed out): `{ids: string[]}`. */
 export const UNDONE_ID = 'undone:state';
+/** History barrier `{msgId, t}`: nothing at or before that history line can be undone. */
+export const HISTORY_START_ID = 'history:start';
 /** How many action lines stay undoable. */
 export const MAX_UNDO = 50;
 

@@ -5,6 +5,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import {
   ChatKind,
   ChatMessage,
+  HISTORY_START_ID,
   MAX_UNDO,
   RoomInfo,
   UNDONE_ID,
@@ -130,10 +131,17 @@ export class RoomService {
   /** Ids of history lines the game can be reset to (their undo entry exists); the newest MAX_UNDO only. */
   readonly undoable = computed<ReadonlySet<string>>(() => {
     const index = this.messageIndex();
+    const after = this.afterBarrier();
     const msgs = new Set<string>();
-    for (const e of this.journalEntries()) if (index.has(e.msg)) msgs.add(e.msg);
+    for (const e of this.journalEntries()) if (index.has(e.msg) && after(e.msg)) msgs.add(e.msg);
     const ordered = [...msgs].sort((a, b) => index.get(a)! - index.get(b)!);
     return new Set(ordered.slice(-MAX_UNDO));
+  });
+  /** The history barrier set by the last new round (null = none): lines at or before it are final. */
+  readonly historyStart = computed<{ msgId: string; t: number } | null>(() => {
+    const data = this._world()[HISTORY_START_ID]?.data;
+    if (!data || typeof data['msgId'] !== 'string' || typeof data['t'] !== 'number') return null;
+    return { msgId: data['msgId'], t: data['t'] };
   });
   /** Ids of history lines that were undone (they stay in the log, greyed out). */
   readonly undoneIds = computed<ReadonlySet<string>>(() => {
@@ -205,9 +213,37 @@ export class RoomService {
    * Post a game-history line ("<displayName>: <text>") visible to everyone.
    * Callers phrase `text` as a verb phrase, e.g. "added Water Worm".
    */
-  sendAction(text: string): void {
+  sendAction(text: string): string | null {
     const id = this.send(text, 'action');
     if (id) this.writeEntry(`${UNDO_PREFIX}${id}`, id);
+    return id;
+  }
+
+  /**
+   * Make the history line `sinceMessageId` a barrier: store it as `history:start`,
+   * delete every undo entry and the undone marks, and forget unflushed pre-images.
+   * Nothing at or before that line can be undone afterwards (also not by clients
+   * that still hold older entries or write quiet changes late).
+   */
+  resetHistory(sinceMessageId: string): void {
+    if (!this._currentRoom() || !this.supabase.userId()) return;
+    const t = this._messages().find((m) => m.id === sinceMessageId)?.t ?? Date.now();
+    const stale = Object.keys(this._world()).filter(
+      (id) => id.startsWith(UNDO_PREFIX) || id === UNDONE_ID,
+    );
+    this.setWorldObject(HISTORY_START_ID, { msgId: sinceMessageId, t });
+    this.removeWorldObjects(stale);
+  }
+
+  /** Run writes that must not become undo points (a new round resetting the table). */
+  withoutJournal(write: () => void): void {
+    const was = this.restoring;
+    this.restoring = true;
+    try {
+      write();
+    } finally {
+      this.restoring = was;
+    }
   }
 
   /**
@@ -373,13 +409,35 @@ export class RoomService {
     const world = this._world();
     let added = false;
     for (const id of ids) {
-      if (id.startsWith(UNDO_PREFIX) || id === UNDONE_ID || this.pending.has(id)) continue;
+      if (this.skipsJournal(id) || this.pending.has(id)) continue;
       this.pending.set(id, world[id]?.data ?? null);
       added = true;
     }
     if (added && this.flushTimer === undefined) {
       this.flushTimer = setTimeout(() => this.flushQuiet(), JOURNAL_FLUSH_MS);
     }
+  }
+
+  private skipsJournal(id: string): boolean {
+    return id.startsWith(UNDO_PREFIX) || id === UNDONE_ID || id === HISTORY_START_ID;
+  }
+
+  /**
+   * Predicate: is history line `id` strictly after the barrier? Without a barrier all
+   * lines are. A barrier line that is not loaded (yet, or scrolled out) is judged by time.
+   */
+  private afterBarrier(): (id: string) => boolean {
+    const barrier = this.historyStart();
+    if (!barrier) return () => true;
+    const index = this.messageIndex();
+    const messages = this._messages();
+    const at = index.get(barrier.msgId);
+    return (id) => {
+      if (id === barrier.msgId) return false;
+      const i = index.get(id);
+      if (i === undefined) return false;
+      return at !== undefined ? i > at : messages[i]!.t > barrier.t;
+    };
   }
 
   /** Writes with no history line of their own go to an extra entry of the latest action line. */
@@ -390,6 +448,11 @@ export class RoomService {
     const anchor = this._messages().filter((m) => m.kind === 'action').at(-1);
     // No action line yet: stay pending, the next sendAction stores them.
     if (!anchor) return;
+    // The latest action line is the barrier (or older): these writes belong to no undoable action.
+    if (!this.afterBarrier()(anchor.id)) {
+      this.pending.clear();
+      return;
+    }
     const uid = (this.supabase.userId() ?? '').slice(0, 8);
     this.writeEntry(`${UNDO_PREFIX}${anchor.id}~${uid}${Date.now().toString(36)}`, anchor.id);
   }
@@ -421,6 +484,7 @@ export class RoomService {
   /** Keep the entries of the newest MAX_UNDO action lines; any client may prune. */
   private prune(): void {
     const index = this.messageIndex();
+    const after = this.afterBarrier();
     const now = Date.now();
     const drop: string[] = [];
     const byMsg = new Map<string, string[]>();
@@ -428,6 +492,10 @@ export class RoomService {
       if (!index.has(e.msg)) {
         // The history line may just not have arrived yet; only old orphans go.
         if (now - e.t > ORPHAN_ENTRY_MS) drop.push(e.id);
+        continue;
+      }
+      if (!after(e.msg)) {
+        drop.push(e.id);
         continue;
       }
       byMsg.set(e.msg, [...(byMsg.get(e.msg) ?? []), e.id]);
@@ -661,6 +729,12 @@ export class RoomService {
   }
 
   private applyState(id: string, state: WorldObjectState, force = false): void {
+    if (id === HISTORY_START_ID && state.data['msgId'] !== this.historyStart()?.msgId) {
+      // A new barrier: pre-images gathered before it must not attach to a later action.
+      this.pending.clear();
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
     this._world.update((w) => {
       const cur = w[id];
       if (!force && cur && cur.t >= state.t) return w; // older or equal write loses

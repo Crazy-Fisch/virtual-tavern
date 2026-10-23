@@ -608,6 +608,88 @@ describe('RoomService', () => {
     });
   });
 
+  describe('history barrier (new round)', () => {
+    const undoKeys = (s: RoomService) =>
+      Object.keys(s.worldState()).filter((id) => id.startsWith('undo:'));
+    const lastMsg = (s: RoomService) => s.messages().at(-1)!;
+
+    async function roundSetup() {
+      const ctx = setup({ rpc: ROOM_RPC });
+      await ctx.service.joinByCode('ABC123', 'Tim');
+      ctx.service.setWorldObject('card:a', { name: 'A' });
+      ctx.service.sendAction('added A');
+      const old = lastMsg(ctx.service).id;
+      ctx.service.setWorldObject('card:b', { name: 'B' });
+      ctx.service.sendAction('added B');
+      ctx.service.undoTo(lastMsg(ctx.service).id); // leaves undone:state behind
+      expect(ctx.service.worldState()['undone:state']).toBeDefined();
+      const round = ctx.service.sendAction('New round started')!;
+      return { ...ctx, old, round };
+    }
+
+    it('resetHistory deletes every undo entry and the undone marks and stores the barrier', async () => {
+      const { service, client, old, round } = await roundSetup();
+      expect(undoKeys(service).length).toBeGreaterThan(0);
+
+      service.resetHistory(round);
+      await flush();
+
+      expect(undoKeys(service)).toEqual([]);
+      expect(service.worldState()['undone:state']).toBeUndefined();
+      expect(service.historyStart()).toEqual({ msgId: round, t: lastMsg(service).t });
+      expect(service.undoable().size).toBe(0);
+      expect(service.undoTo(old)).toBe(0);
+      expect(service.undoTo(round)).toBe(0);
+      expect(
+        client.from.mock.calls.filter(([t]: [string]) => t === 'world_objects').length,
+      ).toBeGreaterThan(0);
+    });
+
+    it('silent writes anchored at the barrier line are dropped, later actions are undoable again', async () => {
+      vi.useFakeTimers();
+      const { service, round } = await roundSetup();
+      service.resetHistory(round);
+
+      service.withoutJournal(() => service.setWorldObject('round:current', { n: 1 }));
+      service.setWorldObject('life:user-1', { life: 40 }); // another client's silent reset
+      vi.advanceTimersByTime(2000);
+      expect(undoKeys(service)).toEqual([]);
+      expect(service.undoable().size).toBe(0);
+
+      service.setWorldObject('card:c', { name: 'C' });
+      service.sendAction('added C');
+      const after = lastMsg(service).id;
+      expect(service.undoable().has(after)).toBe(true);
+      const [entry] = undoKeys(service);
+      expect(service.worldState()[entry!]?.data['before']).toEqual({ 'card:c': null });
+      expect(service.undoTo(after)).toBe(1);
+      expect(service.worldState()['card:c']).toBeUndefined();
+      expect(service.worldState()['card:b']).toBeUndefined();
+    });
+
+    it('a barrier set by another client clears unflushed pre-images and hides older entries', async () => {
+      const { service, handlers, old, round } = await roundSetup();
+      service.setWorldObject('life:user-1', { life: 3 }); // pending, not yet attached
+
+      handlers['world_objects']!({
+        eventType: 'UPDATE',
+        new: {
+          object_id: 'history:start',
+          data: { msgId: round, t: lastMsg(service).t },
+          updated_by: 'u2',
+          updated_at: '2026-01-01T00:00:10Z',
+        },
+      });
+
+      expect(service.historyStart()?.msgId).toBe(round);
+      expect(service.undoable().has(old)).toBe(false);
+      expect(service.undoTo(old)).toBe(0);
+      service.sendAction('first of the new game');
+      const [entry] = undoKeys(service).filter((k) => k.endsWith(lastMsg(service).id));
+      expect(service.worldState()[entry!]?.data['before']).toEqual({});
+    });
+  });
+
   describe('room lifecycle (perstistance.md)', () => {
     const closeCalls = (client: { rpc: ReturnType<typeof vi.fn> }) =>
       client.rpc.mock.calls.filter(([fn]) => fn === 'close_room');

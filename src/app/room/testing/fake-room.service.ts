@@ -1,5 +1,5 @@
 import { computed, signal } from '@angular/core';
-import { MAX_UNDO, WorldObjectData, WorldState } from '../room.types';
+import { HISTORY_START_ID, MAX_UNDO, WorldObjectData, WorldState } from '../room.types';
 
 /**
  * In-memory RoomService stand-in for specs (mocking at the service seam, per
@@ -43,6 +43,11 @@ export class FakeRoomService {
       ),
   );
   readonly undoneIds = signal<ReadonlySet<string>>(new Set());
+  /** Mirrors RoomService: the history line after which undo points exist (null = none). */
+  readonly historyStart = computed<{ msgId: string; t: number } | null>(() => {
+    const data = this._world()[HISTORY_START_ID]?.data;
+    return data ? { msgId: data['msgId'] as string, t: data['t'] as number } : null;
+  });
 
   setWorldObject(id: string, data: WorldObjectData): void {
     this.setWorldObjects([[id, data]]);
@@ -69,13 +74,33 @@ export class FakeRoomService {
     );
   }
 
-  sendAction(text: string): void {
+  sendAction(text: string): string {
     const id = `action-${this.actions.length + 1}`;
     this.actions.push(text);
     this.actionIds.push(id);
     const before = new Map(this.pending);
     this.pending.clear();
     this._entries.update((e) => [...e, { msg: id, before }].slice(-MAX_UNDO));
+    return id;
+  }
+
+  /** History barrier: drops every undo point and mark; later quiet writes of older lines are ignored. */
+  resetHistory(messageId: string): void {
+    this.pending.clear();
+    this._entries.set([]);
+    this.undoneIds.set(new Set());
+    this.setWorldObject(HISTORY_START_ID, { msgId: messageId, t: this.clock });
+  }
+
+  /** Run writes that must not become undo points. */
+  withoutJournal(write: () => void): void {
+    const was = this.restoring;
+    this.restoring = true;
+    try {
+      write();
+    } finally {
+      this.restoring = was;
+    }
   }
 
   /** Reset the world to just before action `messageId`; returns how many actions were undone. */
@@ -110,6 +135,7 @@ export class FakeRoomService {
   /** Quiet writes belong to the latest action line (RoomService does this after a short delay). */
   private attachQuietWrites(): void {
     const last = this._entries().at(-1);
+    if (!last && this.historyStart()) this.pending.clear();
     if (!last || this.pending.size === 0) return;
     for (const [id, data] of this.pending) if (!last.before.has(id)) last.before.set(id, data);
     this.pending.clear();
@@ -118,6 +144,7 @@ export class FakeRoomService {
   private journal(ids: readonly string[]): void {
     if (this.restoring) return;
     for (const id of ids) {
+      if (id === HISTORY_START_ID) continue;
       if (!this.pending.has(id)) this.pending.set(id, this._world()[id]?.data ?? null);
     }
   }
