@@ -441,7 +441,7 @@ describe('CardInteractions', () => {
         const card = store.card(cardId)!;
         expect(card.combat).toEqual({ role: 'attack' });
         expect(Math.abs(card.position[2])).toBeCloseTo(LANE_Z, 5);
-        expect(card.position[0]).toBeCloseTo(0, 5); // a lone attacker is centred
+        expect(card.position[0]).toBeCloseTo(2, 5); // a lone attacker keeps its dropped x
         expect(room.actions).toEqual(['attacks with Water Worm']);
         expect(card.tapped).toBe(false); // tapping stays manual
       });

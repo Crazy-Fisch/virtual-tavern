@@ -189,7 +189,8 @@ describe('CardStore', () => {
       const [pa, pb] = [store.card(a.id)!.position, store.card(b.id)!.position];
       expect(pa[2]).toBeGreaterThan(0);
       expect(pa[0]).toBeGreaterThan(pb[0]);
-      expect(pa[0] + pb[0]).toBeCloseTo(0);
+      expect(pa[0]).toBeCloseTo(2);
+      expect(pb[0]).toBeCloseTo(-2);
       expect(store.card(a.id)!.tapped).toBe(false);
       expect(store.hasCombat()).toBe(true);
     });
@@ -241,7 +242,7 @@ describe('CardStore', () => {
       expect(store.card(x.id)!.combat).toBeUndefined();
       expect(store.card(x.id)!.position).toEqual(blockerAt);
       expect(store.card(b.id)!.combat).toEqual({ role: 'attack' });
-      expect(store.card(b.id)!.position[0]).toBeCloseTo(0);
+      expect(store.card(b.id)!.position[0]).toBeCloseTo(-2);
     });
 
     it('clearing the last attacker ends combat', () => {

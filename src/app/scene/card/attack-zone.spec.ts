@@ -9,6 +9,7 @@ import {
   layoutCombat,
   seatOfUid,
 } from './attack-zone';
+import { TABLE_WIDTH } from '../scene-assets';
 import { CARD_WIDTH, CardState } from './card.types';
 
 function card(
@@ -37,10 +38,10 @@ const ATTACK = { role: 'attack' } as const;
 const block = (target: string) => ({ role: 'block', target }) as const;
 
 describe('attack zone layout', () => {
-  it('centres a single attacker on its owner side', () => {
+  it('keeps a single attacker at its dropped x on its owner lane', () => {
     const { placements, released } = layoutCombat([card('a', 2.5, ATTACK)], mine);
     const [x, , z] = placements.get('a')!.position;
-    expect(x).toBeCloseTo(0);
+    expect(x).toBeCloseTo(2.5);
     expect(z).toBeCloseTo(attackSide(1));
     expect(released).toEqual([]);
   });
@@ -52,16 +53,47 @@ describe('attack zone layout', () => {
     expect(placements.get('a')!.yaw).toBe(Math.PI);
   });
 
-  it('lines up several attackers by current x with padding, centred', () => {
+  it('leaves attackers that do not overlap at their dropped x', () => {
     const { placements } = layoutCombat(
       [card('c', 3, ATTACK), card('a', -2, ATTACK), card('b', 0, ATTACK)],
+      mine,
+    );
+    const xs = ['a', 'b', 'c'].map((id) => placements.get(id)!.position[0]);
+    expect(xs[0]).toBeCloseTo(-2);
+    expect(xs[1]).toBeCloseTo(0);
+    expect(xs[2]).toBeCloseTo(3);
+  });
+
+  it('separates two overlapping attackers around their mean, keeping the order', () => {
+    const { placements } = layoutCombat([card('b', 1.2, ATTACK), card('a', 1, ATTACK)], mine);
+    const [xa, xb] = ['a', 'b'].map((id) => placements.get(id)!.position[0]);
+    expect(xb - xa).toBeCloseTo(CARD_WIDTH + ZONE_PADDING);
+    expect((xa + xb) / 2).toBeCloseTo(1.1);
+  });
+
+  it('merges chains of colliding attackers into one row', () => {
+    const { placements } = layoutCombat(
+      [card('a', 0, ATTACK), card('b', 0.5, ATTACK), card('c', 1, ATTACK)],
       mine,
     );
     const xs = ['a', 'b', 'c'].map((id) => placements.get(id)!.position[0]);
     const pitch = CARD_WIDTH + ZONE_PADDING;
     expect(xs[1] - xs[0]).toBeCloseTo(pitch);
     expect(xs[2] - xs[1]).toBeCloseTo(pitch);
-    expect(xs[0] + xs[2]).toBeCloseTo(0);
+    expect(xs[1]).toBeCloseTo(0.5);
+  });
+
+  it('keeps an attacker near or beyond the table edge on the table', () => {
+    const half = TABLE_WIDTH / 2;
+    const right = layoutCombat([card('a', half + 2, ATTACK)], mine).placements.get('a')!;
+    expect(right.position[0]).toBeCloseTo(half - CARD_WIDTH / 2);
+    const left = layoutCombat([card('a', -half, ATTACK)], mine).placements.get('a')!;
+    expect(left.position[0]).toBeCloseTo(-half + CARD_WIDTH / 2);
+    const pair = layoutCombat([card('b', half, ATTACK), card('a', half - 0.1, ATTACK)], mine);
+    const [xa, xb] = ['a', 'b'].map((id) => pair.placements.get(id)!.position[0]);
+    expect(xa).toBeLessThan(xb);
+    expect(xb).toBeLessThanOrEqual(half - CARD_WIDTH / 2 + 1e-9);
+    expect(xb - xa).toBeCloseTo(CARD_WIDTH + ZONE_PADDING);
   });
 
   it('is deterministic for equal x (by id)', () => {
@@ -71,7 +103,7 @@ describe('attack zone layout', () => {
 
   it('centres a blocker opposite its attacker', () => {
     const { placements } = layoutCombat(
-      [card('a', 0, ATTACK), card('b', 5, ATTACK), card('x', 9, block('b'), { ownerUid: 'them' })],
+      [card('a', 0, ATTACK), card('b', 2, ATTACK), card('x', 9, block('b'), { ownerUid: 'them' })],
       mine,
     );
     const a = placements.get('a')!.position;
@@ -87,7 +119,7 @@ describe('attack zone layout', () => {
       layoutCombat(
         [
           card('a', 0, ATTACK),
-          card('z', 4, ATTACK),
+          card('z', 0.5, ATTACK),
           ...Array.from({ length: n }, (_, i) => card(`b${i}`, i, block('a'))),
         ],
         mine,
@@ -108,7 +140,7 @@ describe('attack zone layout', () => {
       const { placements } = layoutCombat(
         [
           card('a', 0, ATTACK),
-          card('z', 4, ATTACK),
+          card('z', 0.5, ATTACK),
           ...Array.from({ length: n }, (_, i) => card(`b${i}`, i, block('a'))),
         ],
         mine,

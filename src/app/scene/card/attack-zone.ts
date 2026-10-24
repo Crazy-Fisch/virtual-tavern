@@ -93,14 +93,60 @@ interface Slot {
   width: number;
 }
 
+interface Cluster {
+  slots: Slot[];
+  wanted: number;
+  width: number;
+  x: number;
+}
+
+const clusterOf = (slots: Slot[], wanted: number): Cluster => {
+  const width = slots.reduce((sum, s) => sum + s.width, 0) + (slots.length - 1) * ZONE_PADDING;
+  const limit = Math.max(0, TABLE_WIDTH / 2 - width / 2);
+  return { slots, wanted, width, x: Math.min(limit, Math.max(-limit, wanted / slots.length)) };
+};
+
 /**
- * Where every attacker and blocker belongs. Attackers of a seat stand next to
- * each other with ZONE_PADDING, centred on x = 0, ordered by their current x
- * (then id) so dropping a card left of another puts it on the left. The blockers
- * of one attacker stand opposite it, centred on its x: while they fit into the
- * attacker's own width they sit side by side, past that they overlap each other
- * (at most BLOCKER_MAX_OVERLAP), and only when even that does not fit the attacker
- * gets a wider slot, which pushes its neighbours apart. `tapped` is never touched.
+ * Every slot keeps the x it was dropped at. Slots (sorted by x) whose extents would
+ * come closer than ZONE_PADDING merge into a cluster standing side by side around the
+ * mean of its members' wanted x, clamped onto the table; repeated until none overlap.
+ */
+function spreadSlots(slots: Slot[]): { slot: Slot; x: number }[] {
+  let clusters = slots.map((s) => clusterOf([s], s.attacker.position[0]));
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let i = 0; i + 1 < clusters.length; i++) {
+      const [p, q] = [clusters[i], clusters[i + 1]];
+      if (q.x - q.width / 2 >= p.x + p.width / 2 + ZONE_PADDING - 1e-9) continue;
+      clusters = [
+        ...clusters.slice(0, i),
+        clusterOf([...p.slots, ...q.slots], p.wanted + q.wanted),
+        ...clusters.slice(i + 2),
+      ];
+      merged = true;
+      break;
+    }
+  }
+  const out: { slot: Slot; x: number }[] = [];
+  for (const cluster of clusters) {
+    let left = cluster.x - cluster.width / 2;
+    for (const slot of cluster.slots) {
+      out.push({ slot, x: left + slot.width / 2 });
+      left += slot.width + ZONE_PADDING;
+    }
+  }
+  return out;
+}
+
+/**
+ * Where every attacker and blocker belongs. Attackers of a seat keep the x they
+ * were dropped at (ordered by x, then id) and are pushed apart only as far as needed
+ * to keep ZONE_PADDING between them, around the mean of the colliding ones and never
+ * off the table; z snaps to their lane. The blockers of one attacker stand opposite
+ * it, centred on its x: while they fit into the attacker's own width they sit side
+ * by side, past that they overlap each other (at most BLOCKER_MAX_OVERLAP), and only
+ * when even that does not fit the attacker gets a wider slot, which pushes its
+ * neighbours apart. `tapped` is never touched.
  * Both seats attacking at once would share the lanes; the zone is made for one
  * attacker at a time.
  */
@@ -147,11 +193,7 @@ export function layoutCombat(
       });
     if (slots.length === 0) continue;
 
-    const total = slots.reduce((sum, s) => sum + s.width, 0) + (slots.length - 1) * ZONE_PADDING;
-    let left = -total / 2;
-    for (const slot of slots) {
-      const x = left + slot.width / 2;
-      left += slot.width + ZONE_PADDING;
+    for (const { slot, x } of spreadSlots(slots)) {
       placements.set(slot.attacker.id, {
         position: [x, ZONE_Y, attackSide(seat)],
         yaw: slot.attacker.yaw,
