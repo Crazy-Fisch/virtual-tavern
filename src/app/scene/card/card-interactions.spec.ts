@@ -449,7 +449,7 @@ describe('CardInteractions', () => {
       it('dropping a combat card outside the band clears combat and keeps the drop position', () => {
         dragFromTo([0, 0.5, 0], [2, 0, 0.1]);
         const lane = store.card(cardId)!.position;
-        dragFromTo([lane[0], 0.5, lane[2]], [-2, 0, 3]);
+        dragFromTo([lane[0], lane[1], lane[2]], [-2, 0, 3]);
         const card = store.card(cardId)!;
         expect(card.combat).toBeUndefined();
         expect(card.position[0]).toBeCloseTo(-2, 3);

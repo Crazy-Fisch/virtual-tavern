@@ -811,7 +811,13 @@ export class CardInteractions {
       press &&
       this.setRayFromCursor({ clientX: press.x, clientY: press.y } as MouseEvent)
     ) {
-      if (this.raycaster.ray.intersectPlane(DRAG_PLANE, this.hit)) {
+      // Measured at the card's own height: the lift to DRAG_Y then slides along the press ray, so the grabbed point stays under the cursor.
+      if (
+        this.raycaster.ray.intersectPlane(
+          new Plane(new Vector3(0, 1, 0), -primary.position[1]),
+          this.hit,
+        )
+      ) {
         this.dragOffset = [primary.position[0] - this.hit.x, primary.position[2] - this.hit.z];
       }
     }
