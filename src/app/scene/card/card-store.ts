@@ -1,7 +1,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { RoomService } from '../../room/room.service';
 import { WorldObjectData } from '../../room/room.types';
-import { CARD_PREFIX, CardState } from './card.types';
+import { Seat, layoutCombat, seatOfUid } from './attack-zone';
+import { CARD_PREFIX, CardCombat, CardState } from './card.types';
 
 /** Defensive parse of a card world object's JSON payload. */
 function toCard(id: string, data: WorldObjectData): CardState {
@@ -22,12 +23,30 @@ function toCard(id: string, data: WorldObjectData): CardState {
       ? (data['relatedNames'] as unknown[]).filter((x): x is string => typeof x === 'string')
       : [],
     ownerUid: typeof data['ownerUid'] === 'string' ? data['ownerUid'] : '',
+    ...toCombat(data['combat']),
   };
 }
 
+/** Defensive parse of the optional combat role; anything unreadable means no combat. */
+function toCombat(value: unknown): { combat?: CardCombat } {
+  if (typeof value !== 'object' || value === null) return {};
+  const { role, target } = value as Record<string, unknown>;
+  if (role === 'attack') return { combat: { role } };
+  if (role === 'block' && typeof target === 'string' && target) return { combat: { role, target } };
+  return {};
+}
+
 function toData(card: CardState): WorldObjectData {
-  const { id: _, ...data } = card;
-  return data;
+  const { id: _, combat, ...data } = card;
+  return combat ? { ...data, combat } : data;
+}
+
+/** "A", "A and B", "A, B and C", "A, B, C and 2 more" — for history lines. */
+function nameList(cards: readonly CardState[]): string {
+  const names = cards.map((c) => c.name);
+  if (names.length <= 3)
+    return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
 }
 
 /**
@@ -131,4 +150,81 @@ export class CardStore {
     }
     this.room.removeWorldObject(id);
   }
+
+  /** True while any card is attacking (the attack zone glows). */
+  readonly hasCombat = computed(() => this.cards().some((c) => c.combat?.role === 'attack'));
+
+  /** Send cards into the attack zone: they line up on their owner's side. One write, one history line. */
+  setAttacking(ids: readonly string[]): void {
+    const cards = this.existing(ids);
+    if (cards.length === 0) return;
+    this.commitCombat(new Map(cards.map((c) => [c.id, { role: 'attack' } as CardCombat])));
+    this.room.sendAction(`attacks with ${nameList(cards)}`);
+  }
+
+  /** Block an attacker: the cards stand opposite it. Attackers cannot block, and only an attacking target counts. */
+  setBlocking(ids: readonly string[], attackerId: string): void {
+    const attacker = this.card(attackerId);
+    if (attacker?.combat?.role !== 'attack') return;
+    const cards = this.existing(ids).filter(
+      (c) => c.id !== attackerId && c.combat?.role !== 'attack',
+    );
+    if (cards.length === 0) return;
+    this.commitCombat(
+      new Map(cards.map((c) => [c.id, { role: 'block', target: attackerId } as CardCombat])),
+    );
+    this.room.sendAction(`blocks ${attacker.name} with ${nameList(cards)}`);
+  }
+
+  /** Take cards out of combat where they stand; the blockers of a cleared attacker go with it. */
+  clearCombat(ids: readonly string[]): void {
+    const cards = this.existing(ids).filter((c) => c.combat);
+    if (cards.length === 0) return;
+    const leaving = new Set(cards.map((c) => c.id));
+    const roles = new Map<string, CardCombat | undefined>(cards.map((c) => [c.id, undefined]));
+    for (const c of this.cards()) {
+      if (c.combat?.role === 'block' && leaving.has(c.combat.target)) roles.set(c.id, undefined);
+    }
+    this.commitCombat(roles);
+    this.room.sendAction(`takes ${nameList(cards)} out of combat`);
+  }
+
+  private existing(ids: readonly string[]): CardState[] {
+    return [...new Set(ids)].flatMap((id) => this.card(id) ?? []);
+  }
+
+  private seatOf(card: CardState): Seat {
+    const room = this.room.currentRoom();
+    const ctx = {
+      me: this.room.userId(),
+      meIsOwner: this.room.isRoomOwner(),
+      ownerId: room?.ownerId,
+    };
+    if (card.ownerUid) return seatOfUid(card.ownerUid, ctx);
+    return card.position[2] >= 0 ? 1 : -1;
+  }
+
+  /**
+   * Apply role changes (undefined = leave combat) and write the recomputed layout
+   * of every card still in combat, plus the changed roles, as ONE batch.
+   */
+  private commitCombat(roles: ReadonlyMap<string, CardCombat | undefined>): void {
+    const next = this.cards().map((card) =>
+      roles.has(card.id) ? withCombat(card, roles.get(card.id)) : card,
+    );
+    const { placements, released } = layoutCombat(next, (card) => this.seatOf(card));
+    const patches = new Map<string, Partial<Omit<CardState, 'id'>>>();
+    for (const [id, combat] of roles) patches.set(id, { combat });
+    for (const id of released) patches.set(id, { combat: undefined });
+    for (const [id, pose] of placements) {
+      const card = next.find((c) => c.id === id);
+      patches.set(id, { ...patches.get(id), combat: card?.combat, ...pose });
+    }
+    this.updateMany([...patches]);
+  }
+}
+
+function withCombat(card: CardState, combat: CardCombat | undefined): CardState {
+  const { combat: _, ...rest } = card;
+  return combat ? { ...rest, combat } : rest;
 }

@@ -167,4 +167,95 @@ describe('CardStore', () => {
     // Related names are data, not references — removing cards never breaks them.
     expect(store.card(second.id)!.relatedNames).toEqual(['Goblin Token']);
   });
+
+  describe('combat', () => {
+    function table(): { a: CardState; b: CardState; x: CardState; y: CardState } {
+      const a = makeCard({ name: 'Bear', position: [2, 0.21, 3] });
+      const b = makeCard({ name: 'Wolf', position: [-2, 0.21, 3] });
+      const x = makeCard({ name: 'Wall', ownerUid: 'user-2', position: [0, 0.21, -3] });
+      const y = makeCard({ name: 'Elf', ownerUid: 'user-2', position: [1, 0.21, -3] });
+      store.addMany([a, b, x, y]);
+      room.actions.length = 0;
+      room.batches.length = 0;
+      return { a, b, x, y };
+    }
+
+    it('setAttacking marks and lines up attackers in one batch with one history line', () => {
+      const { a, b } = table();
+      store.setAttacking([a.id, b.id]);
+      expect(room.batches).toEqual([[a.id, b.id]]);
+      expect(room.actions).toEqual(['attacks with Bear and Wolf']);
+      expect(store.card(a.id)!.combat).toEqual({ role: 'attack' });
+      const [pa, pb] = [store.card(a.id)!.position, store.card(b.id)!.position];
+      expect(pa[2]).toBeGreaterThan(0);
+      expect(pa[0]).toBeGreaterThan(pb[0]);
+      expect(pa[0] + pb[0]).toBeCloseTo(0);
+      expect(store.card(a.id)!.tapped).toBe(false);
+      expect(store.hasCombat()).toBe(true);
+    });
+
+    it('hasCombat is false without attackers, and old cards have no combat field', () => {
+      const { a } = table();
+      expect(store.hasCombat()).toBe(false);
+      expect(store.card(a.id)!.combat).toBeUndefined();
+      expect('combat' in room.worldState()[a.id].data).toBe(false);
+    });
+
+    it('setBlocking stands blockers opposite the attacker, relaying everything in one batch', () => {
+      const { a, b, x, y } = table();
+      store.setAttacking([a.id, b.id]);
+      room.actions.length = 0;
+      room.batches.length = 0;
+      store.setBlocking([x.id, y.id], a.id);
+      expect(room.batches).toHaveLength(1);
+      expect(new Set(room.batches[0])).toEqual(new Set([a.id, b.id, x.id, y.id]));
+      expect(room.actions).toEqual(['blocks Bear with Wall and Elf']);
+      const attacker = store.card(a.id)!.position;
+      const blocker = store.card(x.id)!.position;
+      expect(store.card(x.id)!.combat).toEqual({ role: 'block', target: a.id });
+      expect(blocker[2]).toBeCloseTo(-attacker[2]);
+      expect((blocker[0] + store.card(y.id)!.position[0]) / 2).toBeCloseTo(attacker[0]);
+    });
+
+    it('setBlocking ignores a target that is not attacking and cards that attack', () => {
+      const { a, b, x } = table();
+      store.setBlocking([x.id], a.id);
+      expect(room.batches).toEqual([]);
+      store.setAttacking([a.id, b.id]);
+      room.batches.length = 0;
+      store.setBlocking([b.id], a.id);
+      expect(room.batches).toEqual([]);
+    });
+
+    it('clearCombat on an attacker frees its blockers where they stand', () => {
+      const { a, b, x } = table();
+      store.setAttacking([a.id, b.id]);
+      store.setBlocking([x.id], a.id);
+      const blockerAt = store.card(x.id)!.position;
+      room.actions.length = 0;
+      room.batches.length = 0;
+      store.clearCombat([a.id]);
+      expect(room.batches).toHaveLength(1);
+      expect(room.actions).toEqual(['takes Bear out of combat']);
+      expect(store.card(a.id)!.combat).toBeUndefined();
+      expect(store.card(x.id)!.combat).toBeUndefined();
+      expect(store.card(x.id)!.position).toEqual(blockerAt);
+      expect(store.card(b.id)!.combat).toEqual({ role: 'attack' });
+      expect(store.card(b.id)!.position[0]).toBeCloseTo(0);
+    });
+
+    it('clearing the last attacker ends combat', () => {
+      const { a } = table();
+      store.setAttacking([a.id]);
+      store.clearCombat([a.id]);
+      expect(store.hasCombat()).toBe(false);
+    });
+
+    it('reads combat back from a remote payload and drops garbage', () => {
+      room.setWorldObject('card:r1', { name: 'R', combat: { role: 'block', target: 'card:r2' } });
+      room.setWorldObject('card:r2', { name: 'S', combat: { role: 'weird' } });
+      expect(store.card('card:r1')!.combat).toEqual({ role: 'block', target: 'card:r2' });
+      expect(store.card('card:r2')!.combat).toBeUndefined();
+    });
+  });
 });

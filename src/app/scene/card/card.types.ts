@@ -6,6 +6,20 @@ export function newCardId(): string {
 }
 
 /**
+ * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.75 brings a card
+ * down to 0.48 × 0.67 m — well above true proportion, chosen for readability on
+ * the (oversized, 4 × 6 m) table under the fixed orthographic camera, where it
+ * works out to roughly 122 × 170 CSS px on a 1080p screen (0.635 · 0.75 / 4.2
+ * (VIEW_HEIGHT) = 11.34% of the viewport height = 6.38 --u at 16:9 and wider).
+ * A dragged card stays this same 3D instance (no stand-in), so its size and
+ * tapped pose never change while it is picked up (moreimprovements.md).
+ */
+export const CARD_SCALE = 0.75;
+/** Footprint of a card on the table in metres (Card.glb is authored 10× a real 0.635 × 0.889 m card). */
+export const CARD_WIDTH = 0.0635 * 10 * CARD_SCALE;
+export const CARD_LENGTH = 0.0889 * 10 * CARD_SCALE;
+
+/**
  * Persistent state of a card on the table (the design doc's "CardState"):
  * everything needed to respawn the card exactly — pose, facing, and its
  * related cards. Synced through RoomService world objects (id `card:<uuid>`);
@@ -44,7 +58,15 @@ export interface CardState {
    * touches your own cards. '' on cards from before this field existed.
    */
   ownerUid: string;
+  /**
+   * Attack-zone role (attack-zone.ts): an attacker lines up on its owner's half of
+   * the zone, a blocker sits opposite the attacker `target`. Absent on a card that
+   * is not in combat (also every card from before this field existed).
+   */
+  combat?: CardCombat;
 }
+
+export type CardCombat = { role: 'attack' } | { role: 'block'; target: string };
 
 /** The face of a card that is currently showing — one of its two images. */
 export function faceSrc(card: { src: string; backSrc?: string; flipped?: boolean }): string {
@@ -77,6 +99,7 @@ export type CardAction =
   | 'toDeck'
   | 'toGrave'
   | 'toExile'
+  | 'attack'
   | 'delete';
 
 /**
@@ -84,4 +107,10 @@ export type CardAction =
  * (cardselection.md). Everything else drops the selection and acts on the one
  * card that was clicked.
  */
-export const GROUP_ACTIONS: readonly CardAction[] = ['tap', 'related', 'duplicate', 'delete'];
+export const GROUP_ACTIONS: readonly CardAction[] = [
+  'tap',
+  'related',
+  'duplicate',
+  'attack',
+  'delete',
+];

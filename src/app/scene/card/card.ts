@@ -4,7 +4,7 @@ import { AssetLoaderService } from '../asset-loader.service';
 import { CARD_MODEL_URL } from '../scene-assets';
 import { SceneGraph } from '../scene-graph';
 import { CardInteractions } from './card-interactions';
-import { CardState, faceSrc } from './card.types';
+import { CARD_SCALE, CardState, faceSrc } from './card.types';
 
 const HALF_PI = Math.PI / 2;
 /** Slight white tint (emissive) applied to a card's non-art materials while hovered. */
@@ -18,16 +18,6 @@ const HOVER_TINT = 0x333333;
  */
 const FRONT_EMISSIVE = 1;
 const FRONT_EMISSIVE_HOVER = 1.28;
-/**
- * Card.glb is authored at 10× a real card (0.635 × 0.889 m). 0.75 brings a card
- * down to 0.48 × 0.67 m — well above true proportion, chosen for readability on
- * the (oversized, 4 × 6 m) table under the fixed orthographic camera, where it
- * works out to roughly 122 × 170 CSS px on a 1080p screen (0.635 · 0.75 / 4.2
- * (VIEW_HEIGHT) = 11.34% of the viewport height = 6.38 --u at 16:9 and wider).
- * A dragged card stays this same 3D instance (no stand-in), so its size and
- * tapped pose never change while it is picked up (moreimprovements.md).
- */
-const CARD_SCALE = 0.75;
 
 /**
  * A single playing card in the 3D scene, rendering the CardState it receives

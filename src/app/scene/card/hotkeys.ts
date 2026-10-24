@@ -40,6 +40,7 @@ export const CARD_ACTION_LABELS: Readonly<Record<CardAction, string>> = {
   toDeck: 'Put it on top of your deck',
   toGrave: 'Put it into your graveyard',
   toExile: 'Exile it',
+  attack: 'Send it into the attack zone',
   delete: 'Remove it from the table',
 };
 
