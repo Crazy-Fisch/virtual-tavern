@@ -48,3 +48,14 @@ Run on X: yourself (this job never writes there):
 | 2dd4b14 | t1 | Infect below HP, chat panel left with room row and copy code, instant draw completion |
 | 38c4331 | t2 | Undo journal backend in RoomService (50 actions) |
 | see `git log` | t3 | History undo button with confirmation, docs |
+
+## Local commits of job `2026-10-24-tavern-update` (not pushed)
+| Commit | Task | Content |
+| --- | --- | --- |
+| 79f58ee | t1 | Taller deck search panel, new menu tagline, card drag keeps grab offset |
+| 573cdb5 | t2 | Flat plane table, middle-drag pan, wheel zoom, recenter hotkey |
+| 9925d88 | t3 | Attack zone model: combat state, pure layout, CardStore combat methods |
+| 2d09143 | t4 | Attack zone interactions: drop routing, block by drag, Attack menu action, A hotkey |
+| eb5b9c4 | t5 | Attack zone border with red combat glow, docs |
+
+Final check (t5): `npx ng test --no-watch` 21 files, 266 tests passed; `npm run build` OK (main 1.41 MB); `npm start` answered 200 on http://localhost:4200/ and was stopped.
