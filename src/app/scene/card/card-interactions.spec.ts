@@ -380,6 +380,16 @@ describe('CardInteractions', () => {
       expect(interactions.draggingId()).toBeNull();
     });
 
+    it('dragging by the corner keeps the grab offset instead of centring the card on the cursor', () => {
+      down(screenAt(0.3, 0.5, 0.45)); // the card's far corner at the drag height
+      move(screenAt(2, 0.5, 1));
+      const floating = store.card(cardId)!.position;
+      expect(floating[0]).toBeCloseTo(1.7, 3);
+      expect(floating[2]).toBeCloseTo(0.55, 3);
+      up(screenAt(2, 0, 1));
+      expect(store.card(cardId)!.position[0]).toBeCloseTo(1.7, 3);
+    });
+
     it('a drag released over a registered drop target routes the card there, not the table', () => {
       const accept = vi.fn();
       const target = { hitTest: () => true, accept };

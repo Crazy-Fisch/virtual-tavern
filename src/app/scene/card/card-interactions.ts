@@ -151,6 +151,8 @@ export class CardInteractions {
   private spawnDrag = false;
   /** Table point the active drag started from, for moving a whole selection. */
   private dragOrigin: Vector3 | null = null;
+  /** xz gap between the grabbed point and the dragged card's position, so the card keeps its grab offset. */
+  private dragOffset: [number, number] = [0, 0];
   /** The other selected cards travelling with the dragged one, and where they started. */
   private dragGroup: { id: string; start: [number, number, number] }[] = [];
   /** DOM zones that can absorb a dropped card (registered by the Zones overlay). */
@@ -281,6 +283,7 @@ export class CardInteractions {
     this.draggingId.set(null);
     this.dragGroup = [];
     this.dragOrigin = null;
+    this.dragOffset = [0, 0];
     this.spawnDrag = false;
   }
 
@@ -304,6 +307,7 @@ export class CardInteractions {
     this.items.addLocal(item);
     this.draggingId.set(item.id);
     this.dragOrigin = null;
+    this.dragOffset = [0, 0];
     this.dragGroup = [];
     this.spawnDrag = true;
   }
@@ -321,6 +325,7 @@ export class CardInteractions {
     this.handDrag = hooks;
     this.draggingId.set(id);
     this.dragOrigin = null;
+    this.dragOffset = [0, 0];
     this.dragGroup = [];
     this.dragTo(id, event);
   }
@@ -766,7 +771,9 @@ export class CardInteractions {
 
   /** Start moving the pressed object — and, if it is selected, the whole group. */
   private beginDrag(id: string, event: PointerEvent): void {
+    const press = this.pressed;
     this.pressed = null;
+    this.dragOffset = [0, 0];
     this.draggingId.set(id);
     this.hoveredId.set(null); // moving clears highlights
     if (isItemId(id)) {
@@ -788,6 +795,15 @@ export class CardInteractions {
         : [];
     const primary = this.store.card(id);
     this.dragOrigin = primary ? new Vector3(...primary.position) : null;
+    if (
+      primary &&
+      press &&
+      this.setRayFromCursor({ clientX: press.x, clientY: press.y } as MouseEvent)
+    ) {
+      if (this.raycaster.ray.intersectPlane(DRAG_PLANE, this.hit)) {
+        this.dragOffset = [primary.position[0] - this.hit.x, primary.position[2] - this.hit.z];
+      }
+    }
     this.dragTo(id, event);
   }
 
@@ -810,10 +826,12 @@ export class CardInteractions {
     }
     if (!this.setRayFromCursor(event)) return;
     if (!this.raycaster.ray.intersectPlane(DRAG_PLANE, this.hit)) return;
-    this.store.preview(id, { position: [this.hit.x, DRAG_Y, this.hit.z] });
+    const x = this.hit.x + this.dragOffset[0];
+    const z = this.hit.z + this.dragOffset[1];
+    this.store.preview(id, { position: [x, DRAG_Y, z] });
     if (this.dragGroup.length === 0 || !this.dragOrigin) return;
-    const dx = this.hit.x - this.dragOrigin.x;
-    const dz = this.hit.z - this.dragOrigin.z;
+    const dx = x - this.dragOrigin.x;
+    const dz = z - this.dragOrigin.z;
     for (const member of this.dragGroup) {
       this.store.preview(member.id, {
         position: [member.start[0] + dx, DRAG_Y, member.start[2] + dz],
@@ -844,13 +862,13 @@ export class CardInteractions {
       this.endDrag();
       return true;
     }
+    const x = hit.point.x + this.dragOffset[0];
+    const z = hit.point.z + this.dragOffset[1];
     // One batched commit: the whole group (or the single card) lands atomically.
-    const writes: [string, Partial<CardState>][] = [
-      [id, { position: [hit.point.x, y, hit.point.z] }],
-    ];
+    const writes: [string, Partial<CardState>][] = [[id, { position: [x, y, z] }]];
     if (this.dragOrigin) {
-      const dx = hit.point.x - this.dragOrigin.x;
-      const dz = hit.point.z - this.dragOrigin.z;
+      const dx = x - this.dragOrigin.x;
+      const dz = z - this.dragOrigin.z;
       for (const member of this.dragGroup) {
         writes.push([member.id, { position: [member.start[0] + dx, y, member.start[2] + dz] }]);
       }

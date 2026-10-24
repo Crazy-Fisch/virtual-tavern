@@ -57,7 +57,7 @@
   right: 0;
   margin: 0.2rem 0 0;
   padding: 0.2rem;
-  max-height: 14rem;
+  max-height: min(60vh, 28rem);
   overflow-y: auto;
   list-style: none;
   border: 1px solid #2e2e3a;
