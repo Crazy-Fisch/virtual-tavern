@@ -143,6 +143,7 @@ describe('attack zone layout', () => {
   it('knows the zone band and the seats', () => {
     expect(inAttackZone(1, 0)).toBe(true);
     expect(inAttackZone(1, ZONE_HALF_DEPTH + 0.01)).toBe(false);
+    expect(inAttackZone(1, LANE_Z)).toBe(true);
     expect(seatOfUid('me', { me: 'me', meIsOwner: true })).toBe(1);
     expect(seatOfUid('them', { me: 'me', meIsOwner: true })).toBe(-1);
     expect(seatOfUid('them', { me: 'me', meIsOwner: false, ownerId: 'them' })).toBe(1);

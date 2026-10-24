@@ -18,10 +18,15 @@ export const ZONE_PADDING = 0.1;
 export const LANE_GAP = 0.04;
 /** Distance of each lane's centre line from z = 0. */
 export const LANE_Z = (CARD_LENGTH + LANE_GAP) / 2;
-/** Free border around the two lanes that still counts as inside the zone; keep it >= 0 so both lanes stay inside. */
+/** Free border around the two lanes in the former full-depth band, which the zone is now half of. */
 const ZONE_MARGIN = 0.05;
-/** The band covers |z| <= ZONE_HALF_DEPTH and the whole table width. */
-export const ZONE_HALF_DEPTH = LANE_Z + CARD_LENGTH / 2 + ZONE_MARGIN;
+const FULL_HALF_DEPTH = LANE_Z + CARD_LENGTH / 2 + ZONE_MARGIN;
+/**
+ * The band covers |z| <= ZONE_HALF_DEPTH and the whole table width. It is half the
+ * depth of the band that held both lanes' whole cards: it covers each lane's centre
+ * line (LANE_Z < ZONE_HALF_DEPTH must hold) but cards in the lanes overhang its edge.
+ */
+export const ZONE_HALF_DEPTH = FULL_HALF_DEPTH / 2;
 /** Largest share of its width a blocker may be covered by its neighbour before the attackers spread out. */
 export const BLOCKER_MAX_OVERLAP = 0.55;
 /** Resting height of a card in the zone and the lift of each further overlapping blocker. */
