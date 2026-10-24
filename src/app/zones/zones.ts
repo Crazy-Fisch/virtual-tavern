@@ -202,6 +202,7 @@ export class Zones implements OnDestroy {
   private readonly dropTargets: CardDropTarget[] = ZONE_KINDS.map((kind) => ({
     hitTest: (x, y) => this.overZone(x, y, kind),
     accept: (card) => this.zones.takeFromTable(card, kind),
+    acceptMany: (cards) => this.zones.takeManyFromTable(cards, kind),
   }));
 
   /** The player whose zone the examine dialog shows. */

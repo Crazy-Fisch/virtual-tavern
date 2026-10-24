@@ -10,7 +10,7 @@ import { SceneCamera } from '../scene-camera';
 import { BLOCK_Z } from './attack-zone';
 import { CardInteractions } from './card-interactions';
 import { CardStore } from './card-store';
-import { newCardId } from './card.types';
+import { CardState, newCardId } from './card.types';
 
 describe('CardInteractions', () => {
   let interactions: CardInteractions;
@@ -393,15 +393,88 @@ describe('CardInteractions', () => {
 
     it('a drag released over a registered drop target routes the card there, not the table', () => {
       const accept = vi.fn();
-      const target = { hitTest: () => true, accept };
+      const target = { hitTest: () => true, accept, acceptMany: vi.fn() };
       interactions.registerDropTarget(target);
       down(screenAt(0, 0.5, 0));
       move(screenAt(2, 0, 1));
       up(screenAt(2, 0, 1));
       expect(accept).toHaveBeenCalledOnce();
+      expect(target.acceptMany).not.toHaveBeenCalled();
       expect((accept.mock.calls[0]![0] as { id: string }).id).toBe(cardId);
       expect(store.card(cardId)!.position).toEqual([0, 0.5, 0]); // not placed on the table
       expect(interactions.draggingId()).toBeNull();
+      interactions.unregisterDropTarget(target);
+    });
+
+    it('a selection dragged onto a zone target is routed as a whole, primary first', () => {
+      const others = ['Bog Imp', 'Cave Bat'].map((name, i) => {
+        const id = newCardId();
+        store.add({
+          id,
+          name,
+          src: '',
+          position: [1 + i, 0.5, 0],
+          yaw: 0,
+          faceUp: true,
+          tapped: false,
+          relatedNames: [],
+          ownerUid: 'user-1',
+        });
+        return id;
+      });
+      interactions.selectedIds.set(new Set([cardId, ...others]));
+      const accept = vi.fn();
+      const acceptMany = vi.fn();
+      const target = { hitTest: () => true, accept, acceptMany };
+      interactions.registerDropTarget(target);
+      down(screenAt(0, 0.5, 0));
+      move(screenAt(2, 0, 1));
+      up(screenAt(2, 0, 1));
+      expect(accept).not.toHaveBeenCalled();
+      expect(acceptMany).toHaveBeenCalledOnce();
+      const names = (acceptMany.mock.calls[0]![0] as { name: string }[]).map((c) => c.name);
+      expect(names).toEqual(['Water Worm', 'Bog Imp', 'Cave Bat']);
+      expect(interactions.selectedIds().size).toBe(0);
+      expect(interactions.draggingId()).toBeNull();
+      interactions.unregisterDropTarget(target);
+    });
+
+    it('a selection dropped on the graveyard widget leaves the table with one history line', () => {
+      const others = ['Bog Imp', 'Cave Bat'].map((name, i) => {
+        const id = newCardId();
+        store.add({
+          id,
+          name,
+          src: '',
+          position: [1 + i, 0.5, 0],
+          yaw: 0,
+          faceUp: true,
+          tapped: false,
+          relatedNames: [],
+          ownerUid: 'user-1',
+        });
+        return id;
+      });
+      room.actions.length = 0;
+      interactions.selectedIds.set(new Set([cardId, ...others]));
+      const target = {
+        hitTest: () => true,
+        accept: (card: CardState) => zones.takeFromTable(card, 'graveyard'),
+        acceptMany: (cards: CardState[]) => zones.takeManyFromTable(cards, 'graveyard'),
+      };
+      interactions.registerDropTarget(target);
+      down(screenAt(0, 0.5, 0));
+      move(screenAt(2, 0, 1));
+      up(screenAt(2, 0, 1));
+      expect([cardId, ...others].filter((id) => store.card(id))).toEqual([]);
+      expect(zones.mine().graveyard.map((c) => c.name)).toEqual([
+        'Water Worm',
+        'Bog Imp',
+        'Cave Bat',
+      ]);
+      expect(room.actions).toEqual([
+        'put 3 cards into their graveyard (Water Worm, Bog Imp, Cave Bat)',
+      ]);
       interactions.unregisterDropTarget(target);
     });
 
@@ -573,7 +646,7 @@ describe('CardInteractions', () => {
 
     it('a hand card dropped onto a zone widget is absorbed without a table trace', () => {
       const accept = vi.fn();
-      const target = { hitTest: () => true, accept };
+      const target = { hitTest: () => true, accept, acceptMany: vi.fn() };
       interactions.registerDropTarget(target);
       const at = screenAt(-1, 0, 2);
       const { playedId } = beginHandDrag(at);

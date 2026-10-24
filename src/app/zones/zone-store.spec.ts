@@ -190,6 +190,43 @@ describe('ZoneStore', () => {
     ]);
   });
 
+  it('takeManyFromTable moves a selection into the graveyard in one bulk delete, one write, one history line', () => {
+    const three = ['A', 'B', 'C'].map((name, i) => ({ ...tableCard(name), id: `card:m${i}` }));
+    for (const c of three) room.setWorldObject(c.id, { name: c.name });
+    room.setWorldObject('zone:user-1:graveyard', { ownerName: 'Tim', cards: [card('old', 'Old')] });
+    room.batches.length = 0;
+    room.actions.length = 0;
+
+    store.takeManyFromTable(three, 'graveyard');
+
+    expect(three.some((c) => room.worldState()[c.id])).toBe(false);
+    expect(store.mine().graveyard.map((c) => c.name)).toEqual(['Old', 'A', 'B', 'C']);
+    expect(room.batches).toEqual([['zone:user-1:graveyard']]);
+    expect(room.actions).toEqual(['put 3 cards into their graveyard (A, B, C)']);
+  });
+
+  it('takeManyFromTable puts the first card on top of the deck and names no cards for closed zones', () => {
+    const three = ['A', 'B', 'C'].map((name, i) => ({ ...tableCard(name), id: `card:m${i}` }));
+    for (const c of three) room.setWorldObject(c.id, { name: c.name });
+    room.setWorldObject('zone:user-1:deck', { ownerName: 'Tim', cards: [card('old', 'Old')] });
+    store.takeManyFromTable(three, 'deck');
+    expect(store.mine().deck.map((c) => c.name)).toEqual(['A', 'B', 'C', 'Old']);
+    store.takeManyFromTable(three, 'hand');
+    expect(store.mine().hand.map((c) => c.name)).toEqual(['A', 'B', 'C']);
+    expect(room.actions).toEqual([
+      'put 3 cards on top of their deck',
+      'returned 3 cards to their hand',
+    ]);
+  });
+
+  it('takeManyFromTable with one card behaves like takeFromTable', () => {
+    room.setWorldObject('card:t1', { name: 'Water Worm' });
+    store.takeManyFromTable([tableCard('Water Worm')], 'exile');
+    expect(room.worldState()['card:t1']).toBeUndefined();
+    expect(store.mine().exile.map((c) => c.name)).toEqual(['Water Worm']);
+    expect(room.actions).toEqual(['exiled Water Worm']);
+  });
+
   it('a local-only hand card dropped back on the hand leaves no history line', () => {
     store.takeFromTable(tableCard('Water Worm'), 'hand');
     expect(store.mine().hand.map((c) => c.name)).toEqual(['Water Worm']);

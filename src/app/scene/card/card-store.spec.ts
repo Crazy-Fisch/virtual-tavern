@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { RoomService } from '../../room/room.service';
 import { FakeRoomService } from '../../room/testing/fake-room.service';
+import { BLOCK_Z } from './attack-zone';
 import { CardStore } from './card-store';
 import { CardState, newCardId } from './card.types';
 
@@ -187,7 +188,7 @@ describe('CardStore', () => {
       expect(room.actions).toEqual(['attacks with Bear and Wolf']);
       expect(store.card(a.id)!.combat).toEqual({ role: 'attack' });
       const [pa, pb] = [store.card(a.id)!.position, store.card(b.id)!.position];
-      expect(pa[2]).toBeGreaterThan(0);
+      expect(pa[2]).toBeCloseTo(0); // attackers snap to the band centre
       expect(pa[0]).toBeGreaterThan(pb[0]);
       expect(pa[0]).toBeCloseTo(2);
       expect(pb[0]).toBeCloseTo(-2);
@@ -214,7 +215,8 @@ describe('CardStore', () => {
       const attacker = store.card(a.id)!.position;
       const blocker = store.card(x.id)!.position;
       expect(store.card(x.id)!.combat).toEqual({ role: 'block', target: a.id });
-      expect(blocker[2]).toBeCloseTo(-attacker[2]);
+      expect(attacker[2]).toBeCloseTo(0);
+      expect(blocker[2]).toBeCloseTo(-BLOCK_Z);
       expect((blocker[0] + store.card(y.id)!.position[0]) / 2).toBeCloseTo(attacker[0]);
     });
 

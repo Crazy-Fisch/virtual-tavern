@@ -44,6 +44,14 @@ const TAKE_ACTIONS: Readonly<Record<ZoneKind, (name: string) => string>> = {
   exile: (name) => `exiled ${name}`,
 };
 
+/** History line for several cards leaving the table at once; open zones (graveyard/exile) name them. */
+const TAKE_MANY_ACTIONS: Readonly<Record<ZoneKind, (names: string[]) => string>> = {
+  hand: (names) => `returned ${names.length} cards to their hand`,
+  deck: (names) => `put ${names.length} cards on top of their deck`,
+  graveyard: (names) => `put ${names.length} cards into their graveyard (${names.join(', ')})`,
+  exile: (names) => `exiled ${names.length} cards (${names.join(', ')})`,
+};
+
 /** Fisher–Yates copy. */
 function shuffled(cards: ZoneCard[]): ZoneCard[] {
   const deck = [...cards];
@@ -326,6 +334,29 @@ export class ZoneStore {
     // A local-only card dropped back on the hand never left it: no history line.
     if (kind === 'hand' && !onTable) return;
     this.room.sendAction(TAKE_ACTIONS[kind](card.name));
+  }
+
+  /**
+   * Move several table cards into one of my zones as ONE write, ONE bulk delete
+   * and ONE history line (one undo point). The first card ends on top of a deck
+   * (the order given is the order they sit in); other zones append in that order.
+   */
+  takeManyFromTable(cards: readonly CardState[], kind: ZoneKind): void {
+    const [first] = cards;
+    if (!first) return;
+    if (cards.length === 1) {
+      this.takeFromTable(first, kind);
+      return;
+    }
+    const world = this.room.worldState();
+    const gone = cards.filter((c) => !!world[c.id]).map((c) => c.id);
+    if (gone.length) this.room.removeWorldObjects(gone);
+    const moved = cards.map(
+      (c): ZoneCard => ({ id: crypto.randomUUID(), name: c.name, src: c.src }),
+    );
+    const zone = this.mine()[kind];
+    this.write(kind, kind === 'deck' ? [...moved, ...zone] : [...zone, ...moved]);
+    this.room.sendAction(TAKE_MANY_ACTIONS[kind](cards.map((c) => c.name)));
   }
 
   /** Add a card to one of my zones (deck = on top). Used by the util window; logging is the caller's. */

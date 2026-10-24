@@ -244,6 +244,7 @@ card drags the whole group (offsets kept, the cards stay in the scene — like e
 a plain click still taps just one; `act()` applies `GROUP_ACTIONS` (`card.types.ts`:
 tap/related/delete) to the whole selection and drops the selection for anything else.
 Clicking empty table, or grabbing/right-clicking a card that is not selected, clears it.
+A dragged selection released over a zone widget goes into that zone as a whole: `CardInteractions` hands the primary card plus every group member to `CardDropTarget.acceptMany`, `ZoneStore.takeManyFromTable` deletes the table cards with one bulk delete, writes the zone once (deck: first card on top; other zones append) and posts ONE history line (names listed for graveyard/exile only), so it is one undo point; the selection is cleared and `routeCombat` does not run for the absorbed cards.
 
 **Table items** (`designdocs/additionalitems.md`) live in `src/app/scene/item/`: `ItemStore`
 (root) projects `item:` world objects into `ItemState` (kind, position, absolute unwrapped

@@ -78,6 +78,8 @@ export interface CardDropTarget {
   hitTest(clientX: number, clientY: number): boolean;
   /** Absorb the dropped card (still a table card at this point). */
   accept(card: CardState): void;
+  /** Absorb a dragged multi-selection at once (primary card first): one write, one history line. */
+  acceptMany(cards: CardState[]): void;
 }
 
 /** A card that exists nowhere yet — a search hit or a related-cards entry —
@@ -647,8 +649,16 @@ export class CardInteractions {
       const card = this.store.card(draggingId);
       const target = card ? this.dropTargetAt(event.clientX, event.clientY) : null;
       if (target && card) {
+        const group = this.dragGroup.flatMap((m) => this.store.card(m.id) ?? []);
         this.clearDragPreviews(draggingId);
         this.endDrag();
+        if (group.length > 0) {
+          const all = [card, ...group];
+          for (const member of all) this.items.removeAttachedTo(member.id);
+          this.clearSelection();
+          target.acceptMany(all);
+          return;
+        }
         this.items.removeAttachedTo(card.id);
         // A hand card dropped straight onto a zone widget never reached the
         // shared world — discard the local copy before the zone absorbs it.
