@@ -15,11 +15,11 @@ export type Seat = 1 | -1;
 /** Gap between neighbouring cards of a row, in metres. */
 export const ZONE_PADDING = 0.1;
 /** Gap between the attacker lane and the blocker lane. */
-export const LANE_GAP = 0.06;
+export const LANE_GAP = 0.04;
 /** Distance of each lane's centre line from z = 0. */
 export const LANE_Z = (CARD_LENGTH + LANE_GAP) / 2;
-/** Free border around the two lanes that still counts as inside the zone. */
-const ZONE_MARGIN = 0.15;
+/** Free border around the two lanes that still counts as inside the zone; keep it >= 0 so both lanes stay inside. */
+const ZONE_MARGIN = 0.05;
 /** The band covers |z| <= ZONE_HALF_DEPTH and the whole table width. */
 export const ZONE_HALF_DEPTH = LANE_Z + CARD_LENGTH / 2 + ZONE_MARGIN;
 /** Largest share of its width a blocker may be covered by its neighbour before the attackers spread out. */

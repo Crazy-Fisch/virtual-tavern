@@ -11,13 +11,13 @@ import { ZONE_HALF_DEPTH } from './card/attack-zone';
 import { TABLE_WIDTH, TABLE_Y } from './scene-assets';
 
 /** Offsets of the border loops from the band edge (m) and the brightness at each: a thin core with a soft falloff on both sides. */
-const LOOP_OFFSETS = [-0.14, -0.015, 0.015, 0.14];
+const LOOP_OFFSETS = [-0.06, -0.006, 0.006, 0.06];
 const LOOP_BRIGHTNESS = [0, 1, 1, 0];
 const BORDER_Y = TABLE_Y + 0.004;
 const IDLE_COLOR = new Color(0xcdb98f);
 const IDLE_OPACITY = 0.1;
 const ACTIVE_COLOR = new Color(0xff2a14);
-const ACTIVE_OPACITY = 0.42;
+const ACTIVE_OPACITY = 0.5;
 /** Pulse amplitude while active and the fade time between idle and active. */
 const PULSE_AMOUNT = 0.1;
 const FADE_SECONDS = 0.35;
