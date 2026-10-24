@@ -132,7 +132,7 @@ constants in `scene-assets.ts`, along with `TABLE_Y` = 0.2, the tabletop height 
 are tuned for) at `TABLE_Y`, registers it as a pick surface, and dresses it with `PLANK_WOOD`
 through `applyTextureSet`; its UVs are scaled to a square so a 1.5 m tile is not stretched.
 `Table01.glb` stays in `public/models/` but is no longer in `ENVIRONMENT_ASSETS` (empty); the
-dark 40 × 40 m floor below remains as the fallback surface. There are no
+dark 40 × 40 m floor below remains as the fallback surface. `AttackZoneBorder` (`src/app/scene/attack-zone-border.ts`, created by Scene) outlines the attack zone band on the plane: a flat additive, unlit strip just above `TABLE_Y` (polygonOffset, not raycastable, not a surface). It shows a faint neutral outline, fades to a slightly pulsing red glow while `CardStore.hasCombat()` is true (pulse skipped under `prefers-reduced-motion`), and is disposed in `ngOnDestroy`; the glow stays at low opacity because there is no tone mapping. There are no
 avatars or movement — the former door/avatar code was
 removed with the pivot to a card-table view. `P2pService`'s position stream is dormant
 (nothing calls `sendPosition()`; the service still provides `peerCount` for the chat badge
@@ -234,6 +234,8 @@ hand DOM continue in this same drag flow — the `HandDragHooks` `commit` (table
 the play) and `revert` (off-table miss or Escape, back into the hand) decide the ending. The
 pointer listeners live on `window` (not the canvas) so a hand drag started over DOM keeps
 following; hover picking is gated to moves whose target is the canvas.
+
+**Attack zone / combat** (`src/app/scene/card/attack-zone.ts`, pure geometry, no Angular/Three): a horizontal band across the table centre, |z| <= `ZONE_HALF_DEPTH`, full table width. `CardState.combat` is absent (not in combat), `{role:'attack'}` or `{role:'block', target: attackerId}`. Seats: the room owner sits at +Z, everyone else at -Z (`seatOfUid`); attackers stand on their owner's lane (z = ±`LANE_Z`), blockers on the opposite lane. `layoutCombat(cards, seatOf)` returns the pose of every combat card: attackers side by side with `ZONE_PADDING`, ordered by x then id and centred on x = 0; the blockers of one attacker are centred on it, side by side while they fit the attacker's width, then overlapping each other (at most `BLOCKER_MAX_OVERLAP`, each one lifted by `STACK_LIFT`), and only then does the attacker slot widen and push its neighbours apart. Tapping is never touched (manual); blockers whose attacker is gone are `released`. `CardStore.setAttacking/setBlocking/clearCombat/relayoutCombat` write roles plus the whole layout in ONE `updateMany` batch and one history line, so the undo journal covers combat writes. Triggers: a drop whose centre lies in the band (`CardInteractions.routeCombat`, run after every drop, the primary card decides for a dragged multi-selection), a drop onto an opponent's attacker (block), the card menu entries Attack / Remove from combat (group actions, so a selection acts together; hotkey **A** = attack) and dragging a combat card out of the band (leaves combat). The glow state is `hasCombat` (any attacker).
 
 **Selection** (`designdocs/cardselection.md`): dragging on empty table draws a marquee
 (`marquee` signal, drawn by `CardOverlay`); on release every card whose origin projects

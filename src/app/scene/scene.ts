@@ -12,6 +12,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { Zones } from '../zones/zones';
+import { AttackZoneBorder } from './attack-zone-border';
 import { AssetLoaderService } from './asset-loader.service';
 import { CameraRig } from './camera-rig/camera-rig';
 import { Card } from './card/card';
@@ -113,10 +114,13 @@ export class Scene implements AfterViewInit, OnDestroy {
   private readonly sceneCamera = inject(SceneCamera);
   private readonly camera = this.sceneCamera.camera;
   private readonly interactions = inject(CardInteractions);
+  private readonly cardStore = inject(CardStore);
 
   private renderer?: WebGLRenderer;
   private scene?: ThreeScene;
   private torches: PointLight[] = [];
+  private zoneBorder?: AttackZoneBorder;
+  private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   private frameId = 0;
   private resizeObserver?: ResizeObserver;
   private destroyed = false;
@@ -150,6 +154,8 @@ export class Scene implements AfterViewInit, OnDestroy {
     this.scene.add(floor);
     this.interactions.addSurface(floor);
     this.addTable();
+    this.zoneBorder = new AttackZoneBorder();
+    this.scene.add(this.zoneBorder.mesh);
     void this.loadEnvironment(floor);
     this.interactions.attach(canvas);
     this.sceneCamera.attach(canvas);
@@ -163,6 +169,11 @@ export class Scene implements AfterViewInit, OnDestroy {
     const animate = () => {
       this.frameId = requestAnimationFrame(animate);
       this.flickerTorches();
+      this.zoneBorder?.update(
+        performance.now() / 1000,
+        this.cardStore.hasCombat(),
+        this.reducedMotion?.matches ?? false,
+      );
       this.renderer!.render(this.scene!, this.camera);
     };
     animate();
@@ -174,6 +185,7 @@ export class Scene implements AfterViewInit, OnDestroy {
     this.sceneCamera.detach();
     cancelAnimationFrame(this.frameId);
     this.resizeObserver?.disconnect();
+    this.zoneBorder?.dispose();
     this.renderer?.dispose();
   }
 
