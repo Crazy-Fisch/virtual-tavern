@@ -111,11 +111,28 @@ camera lives in `SceneCamera` (`src/app/scene/scene-camera.ts`, provided by Scen
 drawn the same size wherever it lies. `SceneCamera.setAspect()` (called by `Scene.resize`)
 keeps the vertical extent fixed at `VIEW_HEIGHT` and only widens the frustum, so an
 ultrawide screen sees more table rather than smaller cards. The `CameraRig` component
-(`src/app/scene/camera-rig/camera-rig.ts`) poses it: a fixed bird's-eye base pose (~26° off
-vertical, `CAMERA_POS`/`CAMERA_TARGET`, aimed slightly toward the player's own end) looking
+(`src/app/scene/camera-rig/camera-rig.ts`) seats it: a bird's-eye base pose (~26° off
+vertical, `CAMERA_TARGET` + `CAMERA_OFFSET`, aimed toward the player's own end, z = 1) looking
 down on the table from the player's table end — mirrored to the
-opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, fixed once on mount (the
-former mouse-edge pan was removed as irritating under the orthographic view). There are no
+opposite (−Z) end for non-owners via `RoomService.isRoomOwner()`, set once on mount through
+`SceneCamera.setBasePose` (the former mouse-edge pan was removed as irritating under the
+orthographic view). **Camera controls** live in `SceneCamera` (listeners attached by Scene next
+to `CardInteractions`): middle-mouse drag pans — it intersects the cursor ray with the tabletop
+before/after each move and shifts camera and target by the difference, so the table point under
+the cursor follows it for both seats; the wheel over the canvas zooms (`camera.zoom`,
+`MIN_ZOOM` 0.5 … `MAX_ZOOM` 2.5, around the cursor; the listener is non-passive and only reacts
+when the canvas itself is the target, so the hand's wheel scroll in `zones.ts` still works); `C`
+or `Home` (`RECENTER_KEYS` in `hotkeys.ts`, listed in `HOTKEY_GUIDE`) resets pan and zoom to the
+base pose. The pan is clamped so the look-at point stays within `TABLE_WIDTH` × `TABLE_DEPTH`.
+`apply()` refreshes `updateProjectionMatrix`/`updateMatrixWorld` on every change, because
+`CardInteractions.setRayFromCursor` raycasts through the camera before the next render. Only
+button 0 starts card drags and marquees, so the middle button never does. **The table is a flat
+plane**, not a model: `Scene.addTable` builds a `PlaneGeometry(TABLE_WIDTH, TABLE_DEPTH)` (7 × 10 m,
+constants in `scene-assets.ts`, along with `TABLE_Y` = 0.2, the tabletop height cards and drags
+are tuned for) at `TABLE_Y`, registers it as a pick surface, and dresses it with `PLANK_WOOD`
+through `applyTextureSet`; its UVs are scaled to a square so a 1.5 m tile is not stretched.
+`Table01.glb` stays in `public/models/` but is no longer in `ENVIRONMENT_ASSETS` (empty); the
+dark 40 × 40 m floor below remains as the fallback surface. There are no
 avatars or movement — the former door/avatar code was
 removed with the pivot to a card-table view. `P2pService`'s position stream is dormant
 (nothing calls `sendPosition()`; the service still provides `peerCount` for the chat badge
@@ -126,9 +143,9 @@ materials when removing meshes you own.
 
 **Lighting** (`textures.md`) is a warm tavern interior, set up in `Scene.ngAfterViewInit`: a
 near-white warm `HemisphereLight` plus a weak overhead `DirectionalLight` fill, and two
-fire-coloured `PointLight` "torches" at x = ±4.8 — offscreen either side of the ~7.5 m-wide
-orthographic frame — whose inverse-square falloff makes the near table edges ~12% hotter than
-the middle. They flicker (±8%, two out-of-phase sines) from the render loop. Two constraints
+fire-coloured `PointLight` "torches" at x = ±9, y = 2.6 (intensity 140, scaled for the 7 × 10 m
+table; lights only, so pan and zoom cannot frame them) whose inverse-square falloff makes the
+long table edges ~20% hotter than the middle (centre ≈3.0, edges ≈3.7, short ends ≈2.8). They flicker (±8%, two out-of-phase sines) from the render loop. Two constraints
 bound the constants and are worth respecting when touching them. Only the torches are
 saturated: three shades diffuse as `albedo / π × irradiance`, and the plank texture is already
 a deep brown, so a saturated ambient crushes what green and blue it has left and the table

@@ -59,9 +59,17 @@ export interface EnvironmentAsset {
 }
 
 /** Static environment models. Missing files fall back to the procedural floor. */
-export const ENVIRONMENT_ASSETS: readonly EnvironmentAsset[] = [
-  { url: 'models/Table01.glb', material: PLANK_WOOD },
-];
+export const ENVIRONMENT_ASSETS: readonly EnvironmentAsset[] = [];
+
+/**
+ * The table is a flat plane (the view is top-down), not a model; Scene builds it
+ * from these. Width runs along X, depth along Z (the room owner sits at +Z), and
+ * the top face is at TABLE_Y, the height cards and drags are tuned for.
+ */
+export const TABLE_WIDTH = 7;
+export const TABLE_DEPTH = 10;
+export const TABLE_Y = 0.2;
+export const TABLE_MATERIAL: PbrTextureSet = PLANK_WOOD;
 
 /**
  * The card model is NOT a static environment asset — it is instanced per card by

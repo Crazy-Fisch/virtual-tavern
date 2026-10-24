@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, inject, viewChild } from '@angular/core';
 import {
+  BufferAttribute,
   Color,
   DirectionalLight,
   HemisphereLight,
@@ -20,7 +21,13 @@ import { CardStore } from './card/card-store';
 import { applyTextureSet } from './environment-material';
 import { Item } from './item/item';
 import { ItemStore } from './item/item-store';
-import { ENVIRONMENT_ASSETS } from './scene-assets';
+import {
+  ENVIRONMENT_ASSETS,
+  TABLE_DEPTH,
+  TABLE_MATERIAL,
+  TABLE_WIDTH,
+  TABLE_Y,
+} from './scene-assets';
 import { SceneCamera } from './scene-camera';
 import { SceneGraph } from './scene-graph';
 import { UtilWindow } from './util-window/util-window';
@@ -59,23 +66,23 @@ const FILL_COLOR = 0xfff0e0;
 const FILL_INTENSITY = 0.9;
 
 /**
- * Two torches bracketing the table, off either side of the frame: the
- * orthographic view is `VIEW_HEIGHT` (4.2 m) tall and so ~7.5 m wide at 16:9,
- * i.e. visible out to x ≈ ±3.7, and the table itself is 4 × 6 m. At x = ±4.8
- * they stay out of shot on any aspect the camera frames, while sitting close
- * enough that their inverse-square falloff still rakes across the tabletop: the
- * near edges come out ~12% hotter than the middle, a gradient you read as
- * firelight rather than as two spotlights.
+ * Two torches bracketing the table. They are lights only (nothing to see), so the
+ * camera's pan and zoom cannot frame them. The table is 7 × 10 m (TABLE_WIDTH ×
+ * TABLE_DEPTH); at x = ±9, y = 2.6 their inverse-square falloff still rakes
+ * across it as it did across the old 4 × 6 m one. Summing ambient + fill +
+ * torches (with the cosine term) at tabletop height gives ≈3.0 at the centre,
+ * ≈3.7 at the long edges and ≈2.8 at the short ends, against 3.0 / 3.6 / 2.8
+ * before: a gradient you read as firelight rather than as two spotlights.
  *
  * The intensity is in Three's physical units — candela against the default
- * `decay = 2` — so it buys about `30 / d²` at the table, not the ~1 an ambient
+ * `decay = 2` — so it buys about `140 / d²` at the table, not the ~1 an ambient
  * light means by the same number. It is also the one value here with a ceiling:
  * much more and the near edge starts clipping lit props (see above).
  */
 const TORCH_COLOR = 0xffa15a;
-const TORCH_INTENSITY = 30;
-const TORCH_X = 4.8;
-const TORCH_Y = 2.3;
+const TORCH_INTENSITY = 140;
+const TORCH_X = 9;
+const TORCH_Y = 2.6;
 /** Fire, not a lamp: a slow ±8% wobble, out of phase between the two torches. */
 const FLICKER_AMOUNT = 0.08;
 
@@ -142,8 +149,10 @@ export class Scene implements AfterViewInit, OnDestroy {
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
     this.interactions.addSurface(floor);
+    this.addTable();
     void this.loadEnvironment(floor);
     this.interactions.attach(canvas);
+    this.sceneCamera.attach(canvas);
 
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -162,6 +171,7 @@ export class Scene implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroyed = true;
     this.interactions.detach();
+    this.sceneCamera.detach();
     cancelAnimationFrame(this.frameId);
     this.resizeObserver?.disconnect();
     this.renderer?.dispose();
@@ -175,8 +185,36 @@ export class Scene implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Swap the placeholder floor for the authored environment once its GLBs are loaded. */
+  /**
+   * The table: a flat plane at TABLE_Y wearing the plank texture. Its UVs are
+   * scaled to a square so the tile is not stretched on the 7 × 10 m rectangle and
+   * `tileRepeat` (environment-material.ts) measures the right metres per tile.
+   */
+  private addTable(): void {
+    const geometry = new PlaneGeometry(TABLE_WIDTH, TABLE_DEPTH);
+    const uv = geometry.getAttribute('uv') as BufferAttribute;
+    const side = Math.sqrt(TABLE_WIDTH * TABLE_DEPTH);
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(
+        i,
+        ((uv.getX(i) - 0.5) * TABLE_WIDTH) / side + 0.5,
+        ((uv.getY(i) - 0.5) * TABLE_DEPTH) / side + 0.5,
+      );
+    }
+    const table = new Mesh(geometry, new MeshStandardMaterial({ color: 0x562a07, roughness: 1 }));
+    table.rotation.x = -Math.PI / 2;
+    table.position.y = TABLE_Y;
+    this.scene!.add(table);
+    this.interactions.addSurface(table);
+    table.updateMatrixWorld(true);
+    void applyTextureSet(table, TABLE_MATERIAL, this.assets).catch((err: unknown) => {
+      console.warn('[scene] Table textures unavailable, keeping plain material.', err);
+    });
+  }
+
+  /** Add the authored environment GLBs (if any are registered); the dark floor stays as the fallback surface. */
   private async loadEnvironment(placeholderFloor: Mesh): Promise<void> {
+    if (ENVIRONMENT_ASSETS.length === 0) return;
     try {
       const groups = await this.assets.loadAll(ENVIRONMENT_ASSETS.map((a) => a.url));
       if (this.destroyed || !this.scene) return;

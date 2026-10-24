@@ -24,6 +24,9 @@ export const HOTKEYS: Readonly<Record<string, CardAction>> = {
   Delete: 'delete',
 };
 
+/** Keys that put the camera back on the seat's base view (pan and zoom reset). */
+export const RECENTER_KEYS: readonly string[] = ['c', 'Home'];
+
 /** How each card action reads in the overview (the menu labels are dynamic). */
 export const CARD_ACTION_LABELS: Readonly<Record<CardAction, string>> = {
   view: 'View the card large',
@@ -88,6 +91,7 @@ export const HOTKEY_GUIDE: readonly HotkeyGroup[] = [
     title: 'Anywhere in a room',
     entries: [
       { keys: 'U', description: 'Untap all of your cards' },
+      { keys: 'C / Home', description: 'Recenter the camera (resets pan and zoom)' },
       { keys: 'Esc', description: 'Close a menu, cancel a drag, clear the selection' },
     ],
   },
@@ -106,6 +110,8 @@ export const HOTKEY_GUIDE: readonly HotkeyGroup[] = [
         keys: 'Click your deck',
         description: 'Draw a card (right-click for shuffle, reveal, search)',
       },
+      { keys: 'Middle-drag the table', description: 'Pan the camera' },
+      { keys: 'Wheel over the table', description: 'Zoom the camera in and out' },
       { keys: 'Wheel over your hand', description: 'Pan a hand too wide to fit' },
     ],
   },
