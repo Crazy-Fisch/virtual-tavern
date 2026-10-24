@@ -7,7 +7,7 @@ import { ZoneStore } from '../../zones/zone-store';
 import { ItemStore } from '../item/item-store';
 import { newItem } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
-import { LANE_Z } from './attack-zone';
+import { BLOCK_Z } from './attack-zone';
 import { CardInteractions } from './card-interactions';
 import { CardStore } from './card-store';
 import { newCardId } from './card.types';
@@ -436,11 +436,11 @@ describe('CardInteractions', () => {
         for (const card of store.cards()) registerObject(card.id, card.position);
       }
 
-      it('dropping a card into the middle band makes it an attacker lined up on its seat lane', () => {
+      it('dropping a card into the middle band makes it an attacker centred in the band', () => {
         dragFromTo([0, 0.5, 0], [2, 0, 0.1]);
         const card = store.card(cardId)!;
         expect(card.combat).toEqual({ role: 'attack' });
-        expect(Math.abs(card.position[2])).toBeCloseTo(LANE_Z, 5);
+        expect(card.position[2]).toBe(0);
         expect(card.position[0]).toBeCloseTo(2, 5); // a lone attacker keeps its dropped x
         expect(room.actions).toEqual(['attacks with Water Worm']);
         expect(card.tapped).toBe(false); // tapping stays manual
@@ -457,7 +457,7 @@ describe('CardInteractions', () => {
         expect(room.actions).toEqual(['attacks with Water Worm', 'takes Water Worm out of combat']);
       });
 
-      it('dropping onto an opponent attacker blocks it from the opposite lane', () => {
+      it('dropping onto an opponent attacker blocks it from the defender side outside the band', () => {
         dragFromTo([0, 0.5, 0], [-2, 0, 3]); // out of the way, plain placement
         const attackerId = addSecondCard([0, 0.5, 0]);
         store.update(attackerId, { ownerUid: 'user-2' });
@@ -470,7 +470,8 @@ describe('CardInteractions', () => {
         const attacker = store.card(attackerId)!;
         expect(blocker.combat).toEqual({ role: 'block', target: attackerId });
         expect(blocker.position[0]).toBeCloseTo(attacker.position[0], 5);
-        expect(blocker.position[2]).toBeCloseTo(-attacker.position[2], 5);
+        expect(attacker.position[2]).toBe(0);
+        expect(blocker.position[2]).toBeCloseTo(BLOCK_Z, 5); // attacker of seat -1 -> blocker at +z
         expect(room.actions).toEqual(['blocks Second with Water Worm']);
       });
 

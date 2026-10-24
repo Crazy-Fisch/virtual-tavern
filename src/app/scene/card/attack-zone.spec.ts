@@ -1,6 +1,6 @@
 import {
   BLOCKER_MAX_OVERLAP,
-  LANE_Z,
+  BLOCK_Z,
   Seat,
   ZONE_HALF_DEPTH,
   ZONE_PADDING,
@@ -38,18 +38,19 @@ const ATTACK = { role: 'attack' } as const;
 const block = (target: string) => ({ role: 'block', target }) as const;
 
 describe('attack zone layout', () => {
-  it('keeps a single attacker at its dropped x on its owner lane', () => {
+  it('keeps a single attacker at its dropped x on the band centre', () => {
     const { placements, released } = layoutCombat([card('a', 2.5, ATTACK)], mine);
     const [x, , z] = placements.get('a')!.position;
     expect(x).toBeCloseTo(2.5);
-    expect(z).toBeCloseTo(attackSide(1));
+    expect(z).toBe(0);
+    expect(attackSide(1)).toBe(0);
     expect(released).toEqual([]);
   });
 
-  it('puts the other seat on the other half and keeps yaw', () => {
+  it('snaps the other seat attacker to the band centre too and keeps yaw', () => {
     const c = card('a', 0, ATTACK, { yaw: Math.PI });
     const { placements } = layoutCombat([c], () => -1);
-    expect(placements.get('a')!.position[2]).toBeCloseTo(-LANE_Z);
+    expect(placements.get('a')!.position[2]).toBe(0);
     expect(placements.get('a')!.yaw).toBe(Math.PI);
   });
 
@@ -101,7 +102,7 @@ describe('attack zone layout', () => {
     expect(one.placements.get('a')!.position[0]).toBeLessThan(one.placements.get('b')!.position[0]);
   });
 
-  it('centres a blocker opposite its attacker', () => {
+  it('centres a blocker opposite its attacker, outside the band on the defender side', () => {
     const { placements } = layoutCombat(
       [card('a', 0, ATTACK), card('b', 2, ATTACK), card('x', 9, block('b'), { ownerUid: 'them' })],
       mine,
@@ -110,7 +111,13 @@ describe('attack zone layout', () => {
     const b = placements.get('b')!.position;
     const x = placements.get('x')!.position;
     expect(x[0]).toBeCloseTo(b[0]);
-    expect(x[2]).toBeCloseTo(-b[2]);
+    expect(b[2]).toBe(0);
+    expect(x[2]).toBeCloseTo(-BLOCK_Z);
+    expect(Math.abs(x[2])).toBeGreaterThan(ZONE_HALF_DEPTH);
+    expect(
+      layoutCombat([card('a', 0, ATTACK), card('x', 0, block('a'))], () => -1).placements.get('x')!
+        .position[2],
+    ).toBeCloseTo(BLOCK_Z);
     expect(a[0]).toBeLessThan(b[0]);
   });
 
@@ -175,7 +182,8 @@ describe('attack zone layout', () => {
   it('knows the zone band and the seats', () => {
     expect(inAttackZone(1, 0)).toBe(true);
     expect(inAttackZone(1, ZONE_HALF_DEPTH + 0.01)).toBe(false);
-    expect(inAttackZone(1, LANE_Z)).toBe(true);
+    expect(inAttackZone(1, attackSide(1))).toBe(true);
+    expect(inAttackZone(1, BLOCK_Z)).toBe(false);
     expect(seatOfUid('me', { me: 'me', meIsOwner: true })).toBe(1);
     expect(seatOfUid('them', { me: 'me', meIsOwner: true })).toBe(-1);
     expect(seatOfUid('them', { me: 'me', meIsOwner: false, ownerId: 'them' })).toBe(1);

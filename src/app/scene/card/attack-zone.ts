@@ -7,24 +7,25 @@ import { CARD_LENGTH, CARD_WIDTH, CardState } from './card.types';
  * CardStore, the drag code and the glow can share it.
  *
  * Seats: the room owner sits at +Z, everyone else at -Z (`RoomService.seatYaw`).
- * Attackers line up on their owner's half of the band (the "attacker lane"); a
- * blocker stands opposite its attacker, on the other lane.
+ * Attackers snap to the vertical centre of the band (z = 0) and keep their x; a
+ * blocker stands directly opposite its attacker on the defender's side, just
+ * outside the band, so it does not cover the attacker.
  */
 export type Seat = 1 | -1;
 
 /** Gap between neighbouring cards of a row, in metres. */
 export const ZONE_PADDING = 0.1;
-/** Gap between the attacker lane and the blocker lane. */
+/** Gap between an attacker and the blocker standing next to it. */
 export const LANE_GAP = 0.04;
-/** Distance of each lane's centre line from z = 0. */
-export const LANE_Z = (CARD_LENGTH + LANE_GAP) / 2;
-/** Free border around the two lanes in the former full-depth band, which the zone is now half of. */
+/** Distance of a blocker's centre from the attacker's (z = 0): one card length plus the gap, so it stands outside the band. */
+export const BLOCK_Z = CARD_LENGTH + LANE_GAP;
+/** Free border around the two former lanes in the former full-depth band, which the zone is now half of. */
 const ZONE_MARGIN = 0.05;
-const FULL_HALF_DEPTH = LANE_Z + CARD_LENGTH / 2 + ZONE_MARGIN;
+const FULL_HALF_DEPTH = (CARD_LENGTH + LANE_GAP) / 2 + CARD_LENGTH / 2 + ZONE_MARGIN;
 /**
  * The band covers |z| <= ZONE_HALF_DEPTH and the whole table width. It is half the
- * depth of the band that held both lanes' whole cards: it covers each lane's centre
- * line (LANE_Z < ZONE_HALF_DEPTH must hold) but cards in the lanes overhang its edge.
+ * depth of the band that once held two whole lanes of cards. Attackers stand on its
+ * centre line (z = 0); blockers (|z| = BLOCK_Z > ZONE_HALF_DEPTH must hold) stand outside it.
  */
 export const ZONE_HALF_DEPTH = FULL_HALF_DEPTH / 2;
 /** Largest share of its width a blocker may be covered by its neighbour before the attackers spread out. */
@@ -37,14 +38,14 @@ export function inAttackZone(x: number, z: number): boolean {
   return Math.abs(z) <= ZONE_HALF_DEPTH && Math.abs(x) <= TABLE_WIDTH / 2;
 }
 
-/** Centre line (z) of the lane where this seat's attackers stand. */
-export function attackSide(seat: Seat): number {
-  return seat * LANE_Z;
+/** Centre line (z) where this seat's attackers stand: the middle of the band, for both seats. */
+export function attackSide(_seat: Seat): number {
+  return 0;
 }
 
-/** Centre line (z) of the lane where blockers of this seat's attackers stand. */
+/** Centre line (z) where blockers of this seat's attackers stand: the defender's side, outside the band. */
 export function blockSide(seat: Seat): number {
-  return -seat * LANE_Z;
+  return -seat * BLOCK_Z;
 }
 
 /** Who is who at the table, to find the seat of a card's owner. */
@@ -142,12 +143,12 @@ function spreadSlots(slots: Slot[]): { slot: Slot; x: number }[] {
  * Where every attacker and blocker belongs. Attackers of a seat keep the x they
  * were dropped at (ordered by x, then id) and are pushed apart only as far as needed
  * to keep ZONE_PADDING between them, around the mean of the colliding ones and never
- * off the table; z snaps to their lane. The blockers of one attacker stand opposite
- * it, centred on its x: while they fit into the attacker's own width they sit side
+ * off the table; z snaps to the band centre (0). The blockers of one attacker stand opposite
+ * it on the defender's side outside the band, centred on its x: while they fit into the attacker's own width they sit side
  * by side, past that they overlap each other (at most BLOCKER_MAX_OVERLAP), and only
  * when even that does not fit the attacker gets a wider slot, which pushes its
  * neighbours apart. `tapped` is never touched.
- * Both seats attacking at once would share the lanes; the zone is made for one
+ * Both seats attacking at once would share z = 0 and overlap; the zone is made for one
  * attacker at a time.
  */
 export function layoutCombat(
