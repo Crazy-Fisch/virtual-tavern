@@ -418,6 +418,37 @@ export class Zones implements OnDestroy {
     this.zones.setLife(Math.max(0, life + delta));
   }
 
+  /** Which counter's total is being typed in place of the number (null = none). */
+  protected readonly editing = signal<'life' | 'poison' | null>(null);
+
+  protected startEdit(kind: 'life' | 'poison'): void {
+    this.editing.set(kind);
+    afterNextRender(
+      () => {
+        const input = this.hostEl.querySelector<HTMLInputElement>('.counter-input');
+        input?.focus();
+        input?.select();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  /** Enter or blur: set the typed total (empty or non-numeric input is ignored). */
+  protected commitEdit(kind: 'life' | 'poison', raw: string): void {
+    if (this.editing() !== kind) return;
+    this.editing.set(null);
+    const value = raw.trim() === '' ? NaN : Number(raw);
+    if (!Number.isFinite(value)) return;
+    const mine = this.zones.mine();
+    if (Math.max(0, Math.round(value)) === (kind === 'life' ? mine.life : mine.poison)) return;
+    if (kind === 'life') this.zones.setLife(value, true);
+    else this.zones.setPoison(value, true);
+  }
+
+  protected cancelEdit(): void {
+    this.editing.set(null);
+  }
+
   // ---------- infect / poison ----------
 
   protected readonly poisonLethal = POISON_LETHAL;

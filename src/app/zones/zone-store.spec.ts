@@ -287,7 +287,7 @@ describe('ZoneStore', () => {
     TestBed.tick();
 
     expect(store.round()).toBe(1);
-    expect(room.actions).toEqual(['New round started']);
+    expect(room.actions).toEqual(['life 40 → 31', 'New round started']);
     expect(room.worldState()['card:t1']).toBeUndefined();
     expect(room.worldState()['item:i1']).toBeUndefined();
     expect(store.mine().hand).toEqual([]);
@@ -370,5 +370,94 @@ describe('ZoneStore', () => {
     store.startNewRound();
     TestBed.tick();
     expect(store.hasMine()).toBe(false);
+  });
+});
+
+describe('ZoneStore life and infect history', () => {
+  let base = 0;
+  let store: ZoneStore;
+  let room: FakeRoomService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    room = new FakeRoomService();
+    TestBed.configureTestingModule({
+      providers: [{ provide: RoomService, useValue: room }],
+    });
+    store = TestBed.inject(ZoneStore);
+    store.loadDeck([card('a', 'A')]);
+    store.setLife(20);
+    base = room.actions.length;
+  });
+
+  const lines = () => room.actions.slice(base);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('three quick +1 clicks make one "life 20 → 23" line that undo takes back to 20', () => {
+    for (let i = 0; i < 3; i++) {
+      store.setLife(store.mine().life! + 1);
+      vi.advanceTimersByTime(300);
+    }
+    expect(lines()).toEqual([]);
+    expect(store.mine().life).toBe(23);
+    vi.advanceTimersByTime(1000);
+    expect(lines()).toEqual(['life 20 → 23']);
+    expect(room.undoTo(room.actionIds.at(-1)!)).toBe(1);
+    expect(store.mine().life).toBe(20);
+  });
+
+  it('a long burst is cut off before the room flushes its journal on its own', () => {
+    for (let i = 0; i < 20; i++) {
+      store.setLife(store.mine().life! - 1);
+      vi.advanceTimersByTime(300);
+    }
+    expect(lines().length).toBeGreaterThanOrEqual(1);
+    expect(lines()[0]).toBe('life 20 → 15');
+  });
+
+  it('no line when the clicks cancel out', () => {
+    store.setLife(21);
+    store.setLife(20);
+    vi.advanceTimersByTime(3000);
+    expect(lines()).toEqual([]);
+  });
+
+  it('a typed total posts its line at once, for life and infect', () => {
+    store.setLife(7, true);
+    expect(lines()).toEqual(['life 20 → 7']);
+    store.setPoison(2, true);
+    expect(lines()).toEqual(['life 20 → 7', 'infect 0 → 2']);
+    store.setLife(-5, true);
+    expect(store.mine().life).toBe(0);
+    store.setLife(NaN, true);
+    expect(store.mine().life).toBe(0);
+    expect(lines().at(-1)).toBe('life 7 → 0');
+  });
+
+  it('infect clicks are coalesced and undoable', () => {
+    store.setPoison(1);
+    store.setPoison(2);
+    store.setPoison(3);
+    vi.advanceTimersByTime(1000);
+    expect(lines()).toEqual(['infect 0 → 3']);
+    room.undoTo(room.actionIds.at(-1)!);
+    expect(store.mine().poison).toBe(0);
+  });
+
+  it('a new round posts the pending line first and a remote round drops it', () => {
+    store.setLife(15);
+    store.startNewRound();
+    TestBed.tick();
+    expect(lines()).toEqual(['life 20 → 15', 'New round started']);
+
+    store.setLife(10);
+    room.withoutJournal(() => room.setWorldObject('round:current', { n: 5, startedBy: 'user-2' }));
+    TestBed.tick();
+    vi.advanceTimersByTime(3000);
+    expect(lines()).toEqual(['life 20 → 15', 'New round started']);
   });
 });

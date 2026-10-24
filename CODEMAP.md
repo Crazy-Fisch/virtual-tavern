@@ -28,7 +28,7 @@ Angular 22 (standalone, zoneless, signals, @if/@for, templateUrl+styleUrl .html/
 - A player "joins the game" by choosing a deck: Zones `confirmDeck()` -> `ZoneStore.loadDeck(cards)` (zone-store.ts:113) rewrites MY 4 zones (fresh shuffled deck). Table cards, items and life are NOT reset by it. Re-picking a deck is today's only (per-player) restart.
 
 ## Counters
-- Life only: `LIFE_PREFIX/lifeId()` zone.types.ts; `ZoneStore.setLife` zone-store.ts:256 (silent after the first, logs only the starting choice); `PlayerZones.life` filled in zone-store.ts ~81-87; UI `Zones.chooseLife/bumpLife` zones.ts:305-315, template zones.html:89-101 (own, bottom-left) and zones.html:7 (`opp-life`, opponents top-right). Starting-life options const near zones.ts:43.
+- Life only: `LIFE_PREFIX/lifeId()` zone.types.ts; `ZoneStore.setLife/setPoison(n, immediate?)` (zone-store.ts; the first life choice logs "set their starting life to N", every later change goes through `logCounter`: one coalesced "life 20 → 17" / "infect 2 → 3" line 1 s after the last click, max 1.5 s after the first, flushed at once for typed totals, `startNewRound` and destroy, discarded in `resetForRound`; constants `COUNTER_LOG_MS/COUNTER_LOG_MAX_MS` stay below RoomService `JOURNAL_FLUSH_MS` 2 s so the undo pre-image lands on that line); `PlayerZones.life` filled in zone-store.ts ~81-87; UI `Zones.chooseLife/bumpLife` zones.ts:305-315, template zones.html:89-101 (own, bottom-left) and zones.html:7 (`opp-life`, opponents top-right). Starting-life options const near zones.ts:43.
 - No poison/infect anywhere (grep empty). Table counters (+/-/x) are ItemStore items, unrelated to player totals.
 
 ## Card zones, moves, history
@@ -79,7 +79,7 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 - Component style budget raised to 12kB warn / 14kB error (zones.scss was at the 9kB warning).
 
 ## Done: infect counter + quiet return (t4)
-- Poison lives in `life:<uid>` as `{life, start, poison}` (no new prefix); `PlayerZones.poison` (0 default), `ZoneStore.setPoison(n)` (needs a life total first, clamps >= 0, silent), `setLife` preserves it, `resetForRound` zeroes it. `POISON_LETHAL = 10` in zone.types.ts. UI: `.counters` row next to life in zones.html (own, lethal class at 10) and `.opp-poison` badge for opponents (shown when > 0).
+- Poison lives in `life:<uid>` as `{life, start, poison}` (no new prefix); `PlayerZones.poison` (0 default), `ZoneStore.setPoison(n)` (needs a life total first, clamps >= 0, logged like life, see Counters), `setLife` preserves it, `resetForRound` zeroes it. `POISON_LETHAL = 10` in zone.types.ts. UI: `.counters` row next to life in zones.html (own, lethal class at 10) and `.opp-poison` badge for opponents (shown when > 0).
 - Quiet return: `takeFromTable(card,'hand')` for a local-only card (not in worldState) adds it to the hand with no history line; every other zone/table->hand still logs.
 
 ## Done: artwork data + import prints (t5)
@@ -119,7 +119,7 @@ Commit locally only (own .git here), NEVER push; never touch X:\CodeProjects. Fo
 - Chat panel is a fixed 280px; make it resizable or use a % width on small screens.
 - Colour tokens (`#6c4cff`, `#1b1b24`, `#2e2e3a`, ...) are repeated in every scss file: move them to CSS custom properties in styles.scss.
 - Button styles are copied per component (menu, decks, deck-editor, zones): extract shared button/input classes.
-- Add `aria-label`s to icon-only buttons in zones.html (life +/−, poison +/−) and `role="dialog"` to the shared Dialog.
+- (aria-labels on life/poison buttons: done in virtual-tavern t2) Add `role="dialog"` to the shared Dialog.
 
 ## Done: undo journal backend (virtual-tavern-update t2)
 - RoomService journals every own world write: pre-image per object id (first touch in the batch, `null` = absent) in a private `pending` map. `sendAction` stores it as world object `undo:<messageId>` = `{msg, t, by, before}`; silent writes (life, quiet returns, resets) are stored 2 s later as `undo:<latestActionId>~<uid><time>` on the latest action line, or wait for the first action line. Skipped prefixes: `undo:`, `undone:state`. Constants in room.types.ts (`UNDO_PREFIX`, `UNDONE_ID`, `MAX_UNDO`).

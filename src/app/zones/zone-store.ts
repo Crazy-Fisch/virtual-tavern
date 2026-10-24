@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, inject, untracked } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, untracked } from '@angular/core';
 import { RoomService } from '../room/room.service';
 import { CARD_PREFIX, CardState } from '../scene/card/card.types';
 import { ITEM_PREFIX } from '../scene/item/item.types';
@@ -29,6 +29,21 @@ function parseCards(value: unknown): ZoneCard[] {
     return [card.revealed === true ? { ...base, revealed: true } : base];
   });
 }
+
+type CounterKind = 'life' | 'poison';
+
+interface CounterLog {
+  from: number;
+  to: number;
+  since: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+const COUNTER_LABEL: Readonly<Record<CounterKind, string>> = { life: 'life', poison: 'infect' };
+/** Quiet time after the last +/- click before the life line is posted. */
+const COUNTER_LOG_MS = 1000;
+/** Cap from the first click; stays below RoomService's 2 s quiet flush so the burst's pre-image is still pending. */
+const COUNTER_LOG_MAX_MS = 1500;
 
 const ROUND_DECK_KEY = 'virtual-tavern.round-deck';
 
@@ -72,6 +87,9 @@ function shuffled(cards: ZoneCard[]): ZoneCard[] {
 @Injectable({ providedIn: 'root' })
 export class ZoneStore {
   private readonly room = inject(RoomService);
+
+  /** Life/poison changes waiting for their one coalesced history line. */
+  private readonly counterLogs = new Map<CounterKind, CounterLog>();
 
   /** Every player with zones in this room (including me). */
   readonly all = computed<PlayerZones[]>(() => {
@@ -129,6 +147,7 @@ export class ZoneStore {
   private seenRound: { roomId: string; n: number } | null = null;
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.flushCounterLogs());
     effect(() => {
       const room = this.room.currentRoom();
       const n = this.round();
@@ -175,6 +194,7 @@ export class ZoneStore {
   startNewRound(): void {
     const uid = this.room.userId();
     if (!uid) return;
+    this.flushCounterLogs();
     const table = Object.keys(this.room.worldState()).filter(
       (id) => id.startsWith(CARD_PREFIX) || id.startsWith(ITEM_PREFIX),
     );
@@ -195,6 +215,7 @@ export class ZoneStore {
   private resetForRound(): void {
     const uid = this.room.userId();
     if (!uid || !this.hasMine()) return;
+    this.discardCounterLogs();
     const deck = this.recallDeck();
     this.room.withoutJournal(() => {
       if (deck) {
@@ -401,32 +422,74 @@ export class ZoneStore {
 
   /**
    * Set my life total. The first time (life was unset) logs the starting choice;
-   * later adjustments are silent so the +/- buttons don't spam the history.
+   * later changes post one coalesced "life 20 → 17" line (`logCounter`).
+   * `immediate` (a typed total) posts that line right away.
    */
-  setLife(life: number): void {
+  setLife(life: number, immediate = false): void {
     const uid = this.room.userId();
-    if (!uid) return;
-    const first = this.mine().life === null;
+    if (!uid || !Number.isFinite(life)) return;
+    const before = this.mine().life;
+    const next = Math.max(0, Math.round(life));
     const start = this.room.worldState()[lifeId(uid)]?.data['start'];
     this.room.setWorldObject(lifeId(uid), {
-      life,
-      start: typeof start === 'number' ? start : life,
+      life: next,
+      start: typeof start === 'number' ? start : next,
       poison: this.mine().poison,
     });
-    if (first) this.room.sendAction(`set their starting life to ${life}`);
+    if (before === null) this.room.sendAction(`set their starting life to ${next}`);
+    else this.logCounter('life', before, next, immediate);
   }
 
-  /** Set my infect/poison counters (0 and up). Silent like life changes; needs a life total first. */
-  setPoison(poison: number): void {
+  /** Set my infect/poison counters (0 and up); needs a life total first. Logged like life. */
+  setPoison(poison: number, immediate = false): void {
     const uid = this.room.userId();
-    const { life } = this.mine();
-    if (!uid || life === null) return;
+    const { life, poison: before } = this.mine();
+    if (!uid || life === null || !Number.isFinite(poison)) return;
+    const next = Math.max(0, Math.round(poison));
     const start = this.room.worldState()[lifeId(uid)]?.data['start'];
     this.room.setWorldObject(lifeId(uid), {
       life,
       start: typeof start === 'number' ? start : life,
-      poison: Math.max(0, Math.round(poison)),
+      poison: next,
     });
+    this.logCounter('poison', before, next, immediate);
+  }
+
+  /**
+   * Remember the value before the first change of a burst and post one line when the
+   * clicks stop (at the latest COUNTER_LOG_MAX_MS after the first one), so the pre-image
+   * the room journaled for the burst is still pending and lands on that line.
+   */
+  private logCounter(kind: CounterKind, before: number, after: number, immediate: boolean): void {
+    const log = this.counterLogs.get(kind) ?? { from: before, to: after, since: Date.now() };
+    log.to = after;
+    clearTimeout(log.timer);
+    this.counterLogs.set(kind, log);
+    if (immediate) {
+      this.flushCounterLog(kind);
+      return;
+    }
+    const wait = Math.min(COUNTER_LOG_MS, Math.max(0, log.since + COUNTER_LOG_MAX_MS - Date.now()));
+    log.timer = setTimeout(() => this.flushCounterLog(kind), wait);
+  }
+
+  private flushCounterLog(kind: CounterKind): void {
+    const log = this.counterLogs.get(kind);
+    if (!log) return;
+    clearTimeout(log.timer);
+    this.counterLogs.delete(kind);
+    if (log.from !== log.to) {
+      this.room.sendAction(`${COUNTER_LABEL[kind]} ${log.from} → ${log.to}`);
+    }
+  }
+
+  private flushCounterLogs(): void {
+    for (const kind of [...this.counterLogs.keys()]) this.flushCounterLog(kind);
+  }
+
+  private discardCounterLogs(): void {
+    for (const log of this.counterLogs.values()) clearTimeout(log.timer);
+    this.counterLogs.clear();
   }
 
   /**

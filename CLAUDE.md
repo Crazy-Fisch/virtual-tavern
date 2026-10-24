@@ -67,8 +67,8 @@ absorb 15 Hz fan-out, but chat and card/zone state changes are human-rate and fi
   alive, since a reload never closes the room). An unsynced presence state never triggers
   deletion — the sweep handles those rooms instead. **Undo journal**: every own world write
   records its pre-image (null = absent) and `sendAction()` stores the batch as a world object
-  `undo:<messageId>` (`{msg, t, by, before}`; silent writes such as life attach to the latest
-  action line shortly after). `undoable` lists the newest 50 action lines with an entry;
+  `undo:<messageId>` (`{msg, t, by, before}`; silent writes such as quiet card returns attach to the latest
+  action line 2 s after; life/infect changes post their own coalesced line first, see Player zones). `undoable` lists the newest 50 action lines with an entry;
   `undoTo(messageId)` folds those entries newest to oldest, restores the oldest pre-images in one
   upsert plus one delete (not journaled itself), drops the consumed entries, records the undone
   lines in the `undone:state` object (`undoneIds`, shown greyed out in History, since
@@ -295,6 +295,7 @@ the top 1–5 cards, or an X typed in — and **Search**); the graveyard
 and exile piles open on click. A card dragged onto a zone widget is absorbed by that zone:
 Zones registers a
 `CardDropTarget` per kind (hit-tested with `elementFromPoint`) that calls `takeFromTable`.
+My **life and infect totals** (`life:<uid>` `{life, start, poison}`) are +/− buttons around a number; clicking the number swaps it for a small number input (`Zones.editing`, Enter/blur commits, Escape cancels, empty/NaN ignored). `ZoneStore.setLife/setPoison` write at once and post history lines "life 20 → 17" / "infect 2 → 3": a burst of +/− clicks is coalesced (value before the first click, one line 1 s after the last click, at most 1.5 s after the first so it stays below RoomService's 2 s quiet flush and the burst's pre-image lands on the new line — undoing the line restores the old total); a typed total (`immediate`), `startNewRound` and service destroy flush at once, a round reset by another client drops a pending line. The starting-life choice keeps its own line.
 Other players' zone counts sit top-right, with examinable graveyard and exile. Zones are
 **not** created on entry: until a player joins the game the
 zone UI is hidden behind a **centred** "Choose Deck" button (`hasMine()` is the gate) whose

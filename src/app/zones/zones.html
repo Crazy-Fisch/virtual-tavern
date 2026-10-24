@@ -110,11 +110,34 @@
     } @else {
       <div class="counters">
         <div class="life">
-          <button type="button" class="life-btn" title="Lose 1 life" (click)="bumpLife(-1)">
+          <button type="button" class="life-btn" title="Lose 1 life" aria-label="Lose 1 life" (click)="bumpLife(-1)">
             −
           </button>
-          <span class="life-total">{{ me.life }}</span>
-          <button type="button" class="life-btn" title="Gain 1 life" (click)="bumpLife(1)">
+          @if (editing() === 'life') {
+            <input
+              #lifeInput
+              class="counter-input"
+              type="number"
+              min="0"
+              step="1"
+              aria-label="Set life total"
+              [value]="me.life"
+              (keydown.enter)="commitEdit('life', lifeInput.value)"
+              (keydown.escape)="cancelEdit()"
+              (blur)="commitEdit('life', lifeInput.value)"
+            />
+          } @else {
+            <button
+              type="button"
+              class="life-total life-edit"
+              title="Click to type your life total"
+              aria-label="Life total {{ me.life }}, click to set"
+              (click)="startEdit('life')"
+            >
+              {{ me.life }}
+            </button>
+          }
+          <button type="button" class="life-btn" title="Gain 1 life" aria-label="Gain 1 life" (click)="bumpLife(1)">
             +
           </button>
         </div>
@@ -123,17 +146,40 @@
             type="button"
             class="life-btn"
             title="Remove an infect counter"
+            aria-label="Remove an infect counter"
             (click)="bumpPoison(-1)"
           >
             −
           </button>
-          <span class="life-total" [title]="'Infect (poison) counters — lethal at ' + poisonLethal"
-            >☠ {{ me.poison }}</span
-          >
+          @if (editing() === 'poison') {
+            <input
+              #poisonInput
+              class="counter-input"
+              type="number"
+              min="0"
+              step="1"
+              aria-label="Set infect counters"
+              [value]="me.poison"
+              (keydown.enter)="commitEdit('poison', poisonInput.value)"
+              (keydown.escape)="cancelEdit()"
+              (blur)="commitEdit('poison', poisonInput.value)"
+            />
+          } @else {
+            <button
+              type="button"
+              class="life-total life-edit"
+              [title]="'Infect (poison) counters — lethal at ' + poisonLethal + '. Click to type a total'"
+              aria-label="Infect counters {{ me.poison }}, click to set"
+              (click)="startEdit('poison')"
+            >
+              ☠ {{ me.poison }}
+            </button>
+          }
           <button
             type="button"
             class="life-btn"
             title="Add an infect counter"
+            aria-label="Add an infect counter"
             (click)="bumpPoison(1)"
           >
             +
