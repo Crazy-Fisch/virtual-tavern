@@ -7,6 +7,7 @@ import { ZoneStore } from '../../zones/zone-store';
 import { ItemStore } from '../item/item-store';
 import { newItem } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
+import { LANE_Z } from './attack-zone';
 import { CardInteractions } from './card-interactions';
 import { CardStore } from './card-store';
 import { newCardId } from './card.types';
@@ -382,11 +383,11 @@ describe('CardInteractions', () => {
 
     it('dragging by the corner keeps the grab offset instead of centring the card on the cursor', () => {
       down(screenAt(0.3, 0.5, 0.45)); // the card's far corner at the drag height
-      move(screenAt(2, 0.5, 1));
+      move(screenAt(2, 0.5, 3));
       const floating = store.card(cardId)!.position;
       expect(floating[0]).toBeCloseTo(1.7, 3);
-      expect(floating[2]).toBeCloseTo(0.55, 3);
-      up(screenAt(2, 0, 1));
+      expect(floating[2]).toBeCloseTo(2.55, 3);
+      up(screenAt(2, 0, 3));
       expect(store.card(cardId)!.position[0]).toBeCloseTo(1.7, 3);
     });
 
@@ -423,6 +424,94 @@ describe('CardInteractions', () => {
       expect(store.card(cardId)!.position).toEqual([0, 0.5, 0]);
       expect(store.card(cardId)!.tapped).toBe(false);
       expect(interactions.draggingId()).toBeNull();
+    });
+
+    describe('attack zone', () => {
+      /** Drag a table card from one world point to another and release. */
+      function dragFromTo(from: [number, number, number], to: [number, number, number]): void {
+        down(screenAt(...from));
+        move(screenAt(...to));
+        up(screenAt(...to));
+        // The scene objects only follow state in the real app.
+        for (const card of store.cards()) registerObject(card.id, card.position);
+      }
+
+      it('dropping a card into the middle band makes it an attacker lined up on its seat lane', () => {
+        dragFromTo([0, 0.5, 0], [2, 0, 0.1]);
+        const card = store.card(cardId)!;
+        expect(card.combat).toEqual({ role: 'attack' });
+        expect(Math.abs(card.position[2])).toBeCloseTo(LANE_Z, 5);
+        expect(card.position[0]).toBeCloseTo(0, 5); // a lone attacker is centred
+        expect(room.actions).toEqual(['attacks with Water Worm']);
+        expect(card.tapped).toBe(false); // tapping stays manual
+      });
+
+      it('dropping a combat card outside the band clears combat and keeps the drop position', () => {
+        dragFromTo([0, 0.5, 0], [2, 0, 0.1]);
+        const lane = store.card(cardId)!.position;
+        dragFromTo([lane[0], 0.5, lane[2]], [-2, 0, 3]);
+        const card = store.card(cardId)!;
+        expect(card.combat).toBeUndefined();
+        expect(card.position[0]).toBeCloseTo(-2, 3);
+        expect(card.position[2]).toBeCloseTo(3, 3);
+        expect(room.actions).toEqual(['attacks with Water Worm', 'takes Water Worm out of combat']);
+      });
+
+      it('dropping onto an opponent attacker blocks it from the opposite lane', () => {
+        dragFromTo([0, 0.5, 0], [-2, 0, 3]); // out of the way, plain placement
+        const attackerId = addSecondCard([0, 0.5, 0]);
+        store.update(attackerId, { ownerUid: 'user-2' });
+        store.setAttacking([attackerId]);
+        const lane = store.card(attackerId)!.position;
+        registerObject(attackerId, lane);
+        room.actions.length = 0;
+        dragFromTo([-2, 0.5, 3], lane);
+        const blocker = store.card(cardId)!;
+        const attacker = store.card(attackerId)!;
+        expect(blocker.combat).toEqual({ role: 'block', target: attackerId });
+        expect(blocker.position[0]).toBeCloseTo(attacker.position[0], 5);
+        expect(blocker.position[2]).toBeCloseTo(-attacker.position[2], 5);
+        expect(room.actions).toEqual(['blocks Second with Water Worm']);
+      });
+
+      it('dropping onto my own attacker joins the attack instead of blocking', () => {
+        dragFromTo([0, 0.5, 0], [-2, 0, 3]);
+        const attackerId = addSecondCard([0, 0.5, 0]);
+        store.setAttacking([attackerId]);
+        const lane = store.card(attackerId)!.position;
+        registerObject(attackerId, lane);
+        dragFromTo([-2, 0.5, 3], lane);
+        expect(store.card(cardId)!.combat).toEqual({ role: 'attack' });
+        expect(store.card(attackerId)!.combat).toEqual({ role: 'attack' });
+      });
+
+      it('a dragged selection attacks together in one history line', () => {
+        const second = addSecondCard([1, 0.5, 0]);
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        room.actions.length = 0;
+        dragFromTo([0, 0.5, 0], [2, 0, 0.1]);
+        expect(store.card(cardId)!.combat).toEqual({ role: 'attack' });
+        expect(store.card(second)!.combat).toEqual({ role: 'attack' });
+        expect(room.actions).toEqual(['attacks with Water Worm and Second']);
+      });
+
+      it('a card played from the hand into the band attacks and still commits the play', () => {
+        const { playedId, hooks } = beginHandDrag(screenAt(0, 0, 0.1));
+        up(screenAt(0, 0, 0.1));
+        expect(store.card(playedId)!.combat).toEqual({ role: 'attack' });
+        expect(hooks.commit).toHaveBeenCalledOnce();
+      });
+
+      it('the Attack and Remove from combat actions act on the whole selection', () => {
+        const second = addSecondCard([1, 0.5, 0]);
+        marqueeBetween([-2, 0, -2], [2, 0, 2]);
+        interactions.act(cardId, 'attack');
+        expect(store.card(cardId)!.combat).toEqual({ role: 'attack' });
+        expect(store.card(second)!.combat).toEqual({ role: 'attack' });
+        interactions.act(cardId, 'leaveCombat');
+        expect(store.card(cardId)!.combat).toBeUndefined();
+        expect(store.card(second)!.combat).toBeUndefined();
+      });
     });
 
     /** A card freshly played from the hand UI, mid-drag via beginDragFromHand.

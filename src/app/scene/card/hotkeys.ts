@@ -18,6 +18,7 @@ export const HOTKEYS: Readonly<Record<string, CardAction>> = {
   f: 'flip',
   g: 'related',
   d: 'duplicate',
+  a: 'attack',
   h: 'toHand',
   e: 'toExile',
   x: 'delete',
@@ -41,6 +42,7 @@ export const CARD_ACTION_LABELS: Readonly<Record<CardAction, string>> = {
   toGrave: 'Put it into your graveyard',
   toExile: 'Exile it',
   attack: 'Send it into the attack zone',
+  leaveCombat: 'Take it out of combat',
   delete: 'Remove it from the table',
 };
 

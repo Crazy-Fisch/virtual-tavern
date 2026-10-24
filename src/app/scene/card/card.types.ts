@@ -100,6 +100,7 @@ export type CardAction =
   | 'toGrave'
   | 'toExile'
   | 'attack'
+  | 'leaveCombat'
   | 'delete';
 
 /**
@@ -112,5 +113,6 @@ export const GROUP_ACTIONS: readonly CardAction[] = [
   'related',
   'duplicate',
   'attack',
+  'leaveCombat',
   'delete',
 ];

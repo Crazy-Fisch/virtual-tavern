@@ -189,6 +189,11 @@ export class CardStore {
     this.room.sendAction(`takes ${nameList(cards)} out of combat`);
   }
 
+  /** Re-run the layout of the zone without changing any role (a combat card was moved inside it). */
+  relayoutCombat(): void {
+    this.commitCombat(new Map());
+  }
+
   private existing(ids: readonly string[]): CardState[] {
     return [...new Set(ids)].flatMap((id) => this.card(id) ?? []);
   }

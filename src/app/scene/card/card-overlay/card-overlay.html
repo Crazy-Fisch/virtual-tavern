@@ -33,6 +33,16 @@
     <button type="button" (click)="act(m.card.id, 'duplicate')">
       Duplicate{{ groupSuffix(m.group) }}
     </button>
+    @if (m.card.combat?.role !== 'attack' || m.group > 1) {
+      <button type="button" (click)="act(m.card.id, 'attack')">
+        Attack{{ groupSuffix(m.group) }}
+      </button>
+    }
+    @if (m.card.combat || m.group > 1) {
+      <button type="button" (click)="act(m.card.id, 'leaveCombat')">
+        Remove from combat{{ groupSuffix(m.group) }}
+      </button>
+    }
     <button type="button" (click)="act(m.card.id, 'toHand')">To hand</button>
     <button type="button" (click)="act(m.card.id, 'toDeck')">To deck (top)</button>
     <button type="button" (click)="act(m.card.id, 'toGrave')">To graveyard</button>

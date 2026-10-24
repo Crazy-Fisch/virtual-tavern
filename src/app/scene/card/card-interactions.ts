@@ -6,6 +6,7 @@ import { ZoneKind } from '../../zones/zone.types';
 import { ItemStore } from '../item/item-store';
 import { ItemAction, ItemState, isItemId, itemLabel } from '../item/item.types';
 import { SceneCamera } from '../scene-camera';
+import { inAttackZone } from './attack-zone';
 import { CardStore } from './card-store';
 import { CardAction, CardState, GROUP_ACTIONS, faceName, newCardId } from './card.types';
 import { HOTKEYS } from './hotkeys';
@@ -413,6 +414,10 @@ export class CardInteractions {
         this.duplicate(ids); // one batched write, like every other group commit
         return;
       }
+      if (action === 'attack' || action === 'leaveCombat') {
+        this.actOne(cardId, action, ids); // one store call for the whole selection
+        return;
+      }
       // Snapshot first: deleting mutates the store the selection points into.
       for (const id of ids) this.actOne(id, action);
       if (action === 'delete') this.clearSelection();
@@ -445,7 +450,7 @@ export class CardInteractions {
   }
 
   /** One card, one action — the selection-free core of `act`. */
-  private actOne(cardId: string, action: CardAction): void {
+  private actOne(cardId: string, action: CardAction, group: readonly string[] = [cardId]): void {
     const card = this.store.card(cardId);
     if (!card) return;
     switch (action) {
@@ -476,6 +481,12 @@ export class CardInteractions {
       }
       case 'duplicate':
         this.duplicate([cardId]);
+        break;
+      case 'attack':
+        this.store.setAttacking(group);
+        break;
+      case 'leaveCombat':
+        this.store.clearCombat(group);
         break;
       case 'toHand':
         this.toZone(card, 'hand');
@@ -874,8 +885,42 @@ export class CardInteractions {
       }
     }
     this.store.updateMany(writes);
+    this.routeCombat(
+      writes.map(([movedId]) => movedId),
+      [x, z],
+      this.idFor(hit.object),
+    );
     this.endDrag();
     return true;
+  }
+
+  /**
+   * After a drop (cards already at their free positions): a card whose centre
+   * lies in the attack zone attacks, one dropped onto an opponent's attacker
+   * blocks it, and a combat card dropped outside the zone leaves combat where
+   * it landed. The primary card's centre decides for the whole dragged group.
+   */
+  private routeCombat(ids: readonly string[], centre: [number, number], hitId: string | null): void {
+    const me = this.room.userId();
+    const target = hitId && !ids.includes(hitId) ? this.store.card(hitId) : undefined;
+    const onAttacker = target?.combat?.role === 'attack';
+    const foreignAttacker = onAttacker && !!target.ownerUid && target.ownerUid !== me;
+    const cards = ids.flatMap((id) => this.store.card(id) ?? []);
+    const attacking = (id: string) => this.store.card(id)?.combat?.role === 'attack';
+    let blocking: string[] = [];
+    if (foreignAttacker && target) {
+      blocking = cards.filter((c) => c.combat?.role !== 'attack').map((c) => c.id);
+      if (blocking.length) this.store.setBlocking(blocking, target.id);
+    }
+    const rest = cards.filter((c) => !blocking.includes(c.id));
+    const inZone = onAttacker || inAttackZone(centre[0], centre[1]);
+    const leaving = rest.filter((c) => c.combat && (!inZone || c.combat.role === 'block'));
+    if (leaving.length) this.store.clearCombat(leaving.map((c) => c.id));
+    if (!inZone) return;
+    const joining = rest.filter((c) => c.combat?.role !== 'block');
+    const fresh = joining.filter((c) => !attacking(c.id));
+    if (fresh.length) this.store.setAttacking(fresh.map((c) => c.id));
+    else if (joining.length) this.store.relayoutCombat();
   }
 
   /**
